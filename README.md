@@ -92,6 +92,11 @@ Use **Run full library scan** to backfill your existing library at any time.
 
 Chaperone only sends the minimum needed to identify an item — a track's artist/title (or ISRC), or a movie/show/anime's title and provider IDs — to the public metadata services listed above. It stores nothing externally and adds no telemetry.
 
+## A note on the code
+
+> Yes, this plugin is vibe coded. No, I don't care to hear your opinion about it.
+> We all cried when Tony Stark died — and he vibe coded 99% of his work too.
+
 ## License
 
 [MIT](LICENSE) © Grant Garrison
