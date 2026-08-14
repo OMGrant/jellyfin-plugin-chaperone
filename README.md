@@ -31,6 +31,7 @@ Explicit tracks get **`TV-MA`** by default and clean tracks get **`TV-G`** (both
 ## How it works
 
 - **Automatic on import.** Chaperone registers metadata providers for audio, movies, and series, so new content gets rated as it's added to the library.
+- **Albums are rated too.** Each music album is rated from its tracks using the *least restrictive* rating present, so parental controls don't hide the whole album (or its artist) just because the container has no rating of its own. A clean album stays browsable while an explicit track inside it remains individually blocked. Artists need no rating — Jellyfin shows an artist automatically once it has visible content underneath.
 - **Non-destructive by default.** It only fills in a rating when the field is **blank**. Existing ratings are left alone unless you turn on *Overwrite existing ratings*.
 - **Manual full-library scan.** A button on the plugin's config page (and a matching **Dashboard → Scheduled Tasks** entry, *Chaperone Library Scan*) runs a one-off pass over everything already in your library to backfill missing ratings.
 

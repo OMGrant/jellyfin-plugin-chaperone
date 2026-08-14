@@ -46,13 +46,29 @@
                     </div>
                 </div>
 
-                <div class="inputContainer">
-                    <input is="emby-input" type="text" id="ExplicitRating" label="Explicit music rating" />
+                <div class="selectContainer">
+                    <label class="selectLabel" for="ExplicitRating">Explicit music rating</label>
+                    <select is="emby-select" id="ExplicitRating" class="emby-select">
+                        <option value="TV-Y">TV-Y</option>
+                        <option value="TV-Y7">TV-Y7</option>
+                        <option value="TV-G">TV-G</option>
+                        <option value="TV-PG">TV-PG</option>
+                        <option value="TV-14">TV-14</option>
+                        <option value="TV-MA">TV-MA</option>
+                    </select>
                     <div class="fieldDescription">Rating applied to explicit music tracks (default TV-MA).</div>
                 </div>
 
-                <div class="inputContainer">
-                    <input is="emby-input" type="text" id="CleanRating" label="Clean music rating" />
+                <div class="selectContainer">
+                    <label class="selectLabel" for="CleanRating">Clean music rating</label>
+                    <select is="emby-select" id="CleanRating" class="emby-select">
+                        <option value="TV-Y">TV-Y</option>
+                        <option value="TV-Y7">TV-Y7</option>
+                        <option value="TV-G">TV-G</option>
+                        <option value="TV-PG">TV-PG</option>
+                        <option value="TV-14">TV-14</option>
+                        <option value="TV-MA">TV-MA</option>
+                    </select>
                     <div class="fieldDescription">Rating applied to clean music tracks (default TV-G).</div>
                 </div>
 
@@ -127,8 +143,8 @@
                 ApiClient.getPluginConfiguration(ChaperoneConfig.pluginUniqueId).then(function (config) {
                     document.querySelector('#Enabled').checked = config.Enabled;
                     document.querySelector('#OverwriteExisting').checked = config.OverwriteExisting;
-                    document.querySelector('#ExplicitRating').value = config.ExplicitRating || '';
-                    document.querySelector('#CleanRating').value = config.CleanRating || '';
+                    document.querySelector('#ExplicitRating').value = config.ExplicitRating || 'TV-MA';
+                    document.querySelector('#CleanRating').value = config.CleanRating || 'TV-G';
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                     document.querySelector('#EnableMusic').checked = config.EnableMusic;
                     document.querySelector('#EnableMovies').checked = config.EnableMovies;

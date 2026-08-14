@@ -8,12 +8,15 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Globalization;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Chaperone.Providers
@@ -38,6 +41,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IServerConfigurationManager _serverConfig;
         private readonly ILibraryManager _libraryManager;
+        private readonly ILocalizationManager _localization;
         private readonly ILogger<RatingService> _logger;
         private readonly AnimeRatingResolver _anime;
 
@@ -48,13 +52,67 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             IHttpClientFactory httpClientFactory,
             IServerConfigurationManager serverConfig,
             ILibraryManager libraryManager,
+            ILocalizationManager localization,
             ILogger<RatingService> logger)
         {
             _httpClientFactory = httpClientFactory;
             _serverConfig = serverConfig;
             _libraryManager = libraryManager;
+            _localization = localization;
             _logger = logger;
             _anime = new AnimeRatingResolver(httpClientFactory, libraryManager, logger);
+        }
+
+        /// <summary>
+        /// Derives an album's rating from the ratings already on its tracks, choosing the
+        /// <em>least restrictive</em> rating present. This keeps a mixed album browsable — a child
+        /// track flagged explicit stays individually blocked, but the album container (and its
+        /// clean tracks) remain visible. Returns null when no track carries a usable rating.
+        /// </summary>
+        public string? DeriveAlbumRating(MusicAlbum album)
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config is null || !config.EnableMusic)
+            {
+                return null;
+            }
+
+            var query = new InternalItemsQuery
+            {
+                Parent = album,
+                Recursive = true,
+                IncludeItemTypes = new[] { BaseItemKind.Audio },
+                IsVirtualItem = false
+            };
+
+            string? best = null;
+            var bestLevel = int.MaxValue;
+
+            foreach (var track in _libraryManager.GetItemList(query))
+            {
+                var rating = track.OfficialRating;
+                if (string.IsNullOrEmpty(rating))
+                {
+                    continue;
+                }
+
+                // Jellyfin 10.11 replaced GetRatingLevel with GetRatingScore; compare by the
+                // numeric Score, using SubScore only as a tiebreak within the same Score.
+                var score = _localization.GetRatingScore(rating);
+                if (score is null)
+                {
+                    continue;
+                }
+
+                var level = (score.Score * 1000) + (score.SubScore ?? 0);
+                if (level < bestLevel)
+                {
+                    bestLevel = level;
+                    best = rating;
+                }
+            }
+
+            return best;
         }
 
         /// <summary>

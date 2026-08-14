@@ -87,14 +87,25 @@ namespace Jellyfin.Plugin.Chaperone
                 items.AddRange(GetItems(BaseItemKind.Series));
             }
 
-            var total = items.Count;
-            _logger.LogInformation("Chaperone scan: starting over {Total} item(s).", total);
+            // Albums are rated last, after their tracks, by deriving from child ratings. This keeps
+            // parental controls from hiding the album container just for lacking a rating of its own.
+            var albums = config.EnableMusic
+                ? GetItems(BaseItemKind.MusicAlbum)
+                : (IReadOnlyList<BaseItem>)Array.Empty<BaseItem>();
+
+            var total = items.Count + albums.Count;
+            _logger.LogInformation(
+                "Chaperone scan: starting over {Total} item(s) ({Tracks} tracks/movies/shows, {Albums} albums).",
+                total,
+                items.Count,
+                albums.Count);
             progress.Report(0);
 
             var scanned = 0;
             var rated = 0;
+            var processed = 0;
 
-            for (var i = 0; i < total; i++)
+            for (var i = 0; i < items.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -141,7 +152,55 @@ namespace Jellyfin.Plugin.Chaperone
                     }
                 }
 
-                progress.Report((i + 1) * 100.0 / Math.Max(total, 1));
+                processed++;
+                progress.Report(processed * 100.0 / Math.Max(total, 1));
+            }
+
+            for (var i = 0; i < albums.Count; i++)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation(
+                        "Chaperone scan: cancelled after scanning {Scanned}/{Total} (rated {Rated}).",
+                        scanned,
+                        total,
+                        rated);
+                    return;
+                }
+
+                var album = albums[i];
+                scanned++;
+
+                var needsRating = string.IsNullOrEmpty(album.OfficialRating) || config.OverwriteExisting;
+                if (needsRating && album is MusicAlbum musicAlbum)
+                {
+                    try
+                    {
+                        var rating = _ratingService.DeriveAlbumRating(musicAlbum);
+                        if (!string.IsNullOrWhiteSpace(rating)
+                            && !string.Equals(album.OfficialRating, rating, StringComparison.Ordinal))
+                        {
+                            album.OfficialRating = rating;
+                            await _libraryManager.UpdateItemAsync(
+                                album,
+                                album.GetParent(),
+                                ItemUpdateType.MetadataEdit,
+                                cancellationToken).ConfigureAwait(false);
+                            rated++;
+                            _logger.LogInformation(
+                                "Chaperone scan: set '{Rating}' on album '{Name}'.",
+                                rating,
+                                album.Name);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Chaperone scan: failed to rate album '{Name}'.", album.Name);
+                    }
+                }
+
+                processed++;
+                progress.Report(processed * 100.0 / Math.Max(total, 1));
             }
 
             progress.Report(100);
