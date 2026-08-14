@@ -176,7 +176,7 @@ namespace Jellyfin.Plugin.Chaperone
                     try
                     {
                         // Derive the album's own rating from its identified tracks (least restrictive).
-                        var derived = _ratingService.DeriveAlbumRating(musicAlbum);
+                        var derived = config.RateAlbums ? _ratingService.DeriveAlbumRating(musicAlbum) : null;
 
                         var albumNeedsRating = string.IsNullOrEmpty(album.OfficialRating) || config.OverwriteExisting;
                         if (!string.IsNullOrWhiteSpace(derived)
@@ -200,7 +200,7 @@ namespace Jellyfin.Plugin.Chaperone
                         // inherits its album's rating, so the plugin's promise to fill the gap holds
                         // instead of leaving the track unrated (and, for a rated album, needlessly hidden).
                         var albumRating = !string.IsNullOrWhiteSpace(derived) ? derived : album.OfficialRating;
-                        if (!string.IsNullOrWhiteSpace(albumRating))
+                        if (config.InheritAlbumRatingForTracks && !string.IsNullOrWhiteSpace(albumRating))
                         {
                             foreach (var track in GetChildAudio(musicAlbum))
                             {
@@ -235,6 +235,74 @@ namespace Jellyfin.Plugin.Chaperone
 
                 processed++;
                 progress.Report(processed * 100.0 / Math.Max(total, 1));
+            }
+
+            // Artist workaround: stamp every artist TV-G so the container stays browsable when the
+            // user has "Block items with no or unrecognized rating information" on (Jellyfin blocks
+            // unrated artist containers and gives us no way to exempt them). Not a content judgement;
+            // real filtering happens at the album/track level below.
+            if (config.EnableMusic && config.RateAllArtistsBrowsable)
+            {
+                foreach (var artist in GetItems(BaseItemKind.MusicArtist))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation(
+                            "Chaperone scan: cancelled during artist pass (rated {Rated}).",
+                            rated);
+                        return;
+                    }
+
+                    if (!string.IsNullOrEmpty(artist.OfficialRating))
+                    {
+                        continue;
+                    }
+
+                    artist.OfficialRating = "TV-G";
+                    await _libraryManager.UpdateItemAsync(
+                        artist,
+                        artist.GetParent(),
+                        ItemUpdateType.MetadataEdit,
+                        cancellationToken).ConfigureAwait(false);
+                    rated++;
+                    _logger.LogInformation(
+                        "Chaperone scan: set 'TV-G' on artist '{Name}' (browsable workaround).",
+                        artist.Name);
+                }
+            }
+
+            // Final fallback: any music track still unrated after Deezer, MusicBrainz, and album
+            // inheritance gets the configured "unidentified" rating (default "Unrated"), so the
+            // plugin never leaves a gap. Runs last so real ratings and album inheritance win first.
+            if (config.EnableMusic && !string.IsNullOrWhiteSpace(config.UnidentifiedMusicRating))
+            {
+                foreach (var track in GetItems(BaseItemKind.Audio))
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation(
+                            "Chaperone scan: cancelled during final fallback (rated {Rated}).",
+                            rated);
+                        return;
+                    }
+
+                    if (!string.IsNullOrEmpty(track.OfficialRating))
+                    {
+                        continue;
+                    }
+
+                    track.OfficialRating = config.UnidentifiedMusicRating;
+                    await _libraryManager.UpdateItemAsync(
+                        track,
+                        track.GetParent(),
+                        ItemUpdateType.MetadataEdit,
+                        cancellationToken).ConfigureAwait(false);
+                    rated++;
+                    _logger.LogInformation(
+                        "Chaperone scan: marked unidentifiable track '{Name}' as '{Rating}'.",
+                        track.Name,
+                        config.UnidentifiedMusicRating);
+                }
             }
 
             progress.Report(100);

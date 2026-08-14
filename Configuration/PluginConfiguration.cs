@@ -28,6 +28,13 @@ namespace Jellyfin.Plugin.Chaperone.Configuration
         public string CleanRating { get; set; } = "TV-G";
 
         /// <summary>
+        /// Gets or sets the rating applied to music that no source (Deezer, MusicBrainz, or the
+        /// track's album) could identify. Defaults to "Unrated" — an honest label that fills the
+        /// field without fabricating a maturity rating. Set to empty to leave such tracks blank.
+        /// </summary>
+        public string UnidentifiedMusicRating { get; set; } = "Unrated";
+
+        /// <summary>
         /// Gets or sets the TMDb v3 API key.
         /// Defaults to Jellyfin's public TMDb key so the plugin works with zero user action;
         /// replace with your own key if desired.
@@ -53,5 +60,32 @@ namespace Jellyfin.Plugin.Chaperone.Configuration
         /// Gets or sets a value indicating whether the anime (MyAnimeList) fallback is enabled.
         /// </summary>
         public bool EnableAnime { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether music albums are rated from their tracks
+        /// (least-restrictive), so parental controls don't hide the album container for lacking a
+        /// rating of its own.
+        /// </summary>
+        public bool RateAlbums { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether a track that no source could identify inherits
+        /// its album's rating (the third fallback), instead of being left to the unidentified rating.
+        /// </summary>
+        public bool InheritAlbumRatingForTracks { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether every music artist is rated TV-G.
+        /// <para>
+        /// This is a deliberate workaround, not a content judgement. When a user has
+        /// "Block items with no or unrecognized rating information" enabled (the setting that makes
+        /// unrated tracks and albums actually get hidden), Jellyfin also blocks the artist container
+        /// itself unless it carries a recognized rating — which breaks browsing music by artist.
+        /// Jellyfin gives us no way to exempt artist containers from that block, so the only fix is
+        /// to stamp every artist with the lowest recognized rating (TV-G) so the folder always opens.
+        /// The real content filtering still happens one level down, at the album and track level.
+        /// </para>
+        /// </summary>
+        public bool RateAllArtistsBrowsable { get; set; } = true;
     }
 }

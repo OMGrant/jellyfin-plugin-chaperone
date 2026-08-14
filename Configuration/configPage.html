@@ -72,6 +72,26 @@
                     <div class="fieldDescription">Rating applied to clean music tracks (default TV-G).</div>
                 </div>
 
+                <div class="selectContainer">
+                    <label class="selectLabel" for="UnidentifiedMusicRating">Unidentifiable music rating</label>
+                    <select is="emby-select" id="UnidentifiedMusicRating" class="emby-select">
+                        <option value="Unrated">Unrated (honest label)</option>
+                        <option value="">Leave blank</option>
+                        <option value="TV-Y">TV-Y</option>
+                        <option value="TV-Y7">TV-Y7</option>
+                        <option value="TV-G">TV-G</option>
+                        <option value="TV-PG">TV-PG</option>
+                        <option value="TV-14">TV-14</option>
+                        <option value="TV-MA">TV-MA</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Applied to tracks no source could identify (not on Deezer, no ISRC in MusicBrainz,
+                        and their album has no rating either). Default &quot;Unrated&quot; fills the field
+                        honestly without fabricating a maturity rating; choose TV-MA to hide them from
+                        restricted users, or &quot;Leave blank&quot; to disable this fallback.
+                    </div>
+                </div>
+
                 <div class="inputContainer">
                     <input is="emby-input" type="text" id="TmdbApiKey" label="TMDb API key (v3)" />
                     <div class="fieldDescription">
@@ -114,6 +134,42 @@
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
                     <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="RateAlbums" />
+                        <span>Rate albums from their tracks</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Give each album the least-restrictive rating among its tracks, so parental
+                        controls don't hide the album container for lacking a rating of its own.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="InheritAlbumRatingForTracks" />
+                        <span>Fill unidentified tracks from their album</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        When Deezer and MusicBrainz can't identify a track, give it its album's rating
+                        before falling back to the &quot;Unidentifiable music rating&quot; above.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="RateAllArtistsBrowsable" />
+                        <span>Keep artists browsable (rate all artists TV-G)</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Workaround, not a content rating. With &quot;Block items with no or unrecognized
+                        rating information&quot; enabled, Jellyfin also blocks the artist folder unless it
+                        has a recognized rating, which breaks browsing music by artist. Stamping every
+                        artist TV-G keeps the folder open; the real filtering still happens on the albums
+                        and tracks inside. Leave on unless you rate artists yourself.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
                         <input is="emby-checkbox" type="checkbox" id="OverwriteExisting" />
                         <span>Overwrite existing ratings</span>
                     </label>
@@ -145,11 +201,19 @@
                     document.querySelector('#OverwriteExisting').checked = config.OverwriteExisting;
                     document.querySelector('#ExplicitRating').value = config.ExplicitRating || 'TV-MA';
                     document.querySelector('#CleanRating').value = config.CleanRating || 'TV-G';
+                    var umr = config.UnidentifiedMusicRating;
+                    document.querySelector('#UnidentifiedMusicRating').value =
+                        (umr === undefined || umr === null) ? 'Unrated' : umr;
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                     document.querySelector('#EnableMusic').checked = config.EnableMusic;
                     document.querySelector('#EnableMovies').checked = config.EnableMovies;
                     document.querySelector('#EnableShows').checked = config.EnableShows;
                     document.querySelector('#EnableAnime').checked = config.EnableAnime;
+                    document.querySelector('#RateAlbums').checked = config.RateAlbums !== false;
+                    document.querySelector('#InheritAlbumRatingForTracks').checked =
+                        config.InheritAlbumRatingForTracks !== false;
+                    document.querySelector('#RateAllArtistsBrowsable').checked =
+                        config.RateAllArtistsBrowsable !== false;
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -160,11 +224,15 @@
                 config.OverwriteExisting = document.querySelector('#OverwriteExisting').checked;
                 config.ExplicitRating = document.querySelector('#ExplicitRating').value;
                 config.CleanRating = document.querySelector('#CleanRating').value;
+                config.UnidentifiedMusicRating = document.querySelector('#UnidentifiedMusicRating').value;
                 config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
                 config.EnableMusic = document.querySelector('#EnableMusic').checked;
                 config.EnableMovies = document.querySelector('#EnableMovies').checked;
                 config.EnableShows = document.querySelector('#EnableShows').checked;
                 config.EnableAnime = document.querySelector('#EnableAnime').checked;
+                config.RateAlbums = document.querySelector('#RateAlbums').checked;
+                config.InheritAlbumRatingForTracks = document.querySelector('#InheritAlbumRatingForTracks').checked;
+                config.RateAllArtistsBrowsable = document.querySelector('#RateAllArtistsBrowsable').checked;
                 return ApiClient.updatePluginConfiguration(ChaperoneConfig.pluginUniqueId, config);
             });
         }

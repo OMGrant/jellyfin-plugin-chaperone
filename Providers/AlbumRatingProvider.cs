@@ -40,7 +40,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             CancellationToken cancellationToken)
         {
             var config = Plugin.Instance?.Configuration;
-            if (config is null || !config.Enabled || !config.EnableMusic)
+            if (config is null || !config.Enabled || !config.EnableMusic || !config.RateAlbums)
             {
                 return Task.FromResult(ItemUpdateType.None);
             }
