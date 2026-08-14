@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/OMGrant/jellyfin-plugin-chaperone/main/thumb.png",
         "versions": [
             {
+                "version": "1.3.0.0",
+                "changelog": "Label unidentifiable tracks with a configurable rating (default 'Unrated') so nothing is left blank; rate all artists TV-G to keep artist browsing working when 'block unrecognized rating' is enabled (documented workaround); album rating, album-inheritance, and artist rating are now toggles.",
+                "targetAbi": "10.11.11.0",
+                "sourceUrl": "https://github.com/OMGrant/jellyfin-plugin-chaperone/releases/download/v1.3.0.0/chaperone_1.3.0.0.zip",
+                "checksum": "61e2c02f806433fb3104059dc96c1670",
+                "timestamp": "2026-08-14T07:06:21Z"
+            },
+            {
                 "version": "1.2.0.0",
                 "changelog": "Third fallback: a track that neither Deezer nor MusicBrainz can identify inherits its album rating, so unmatched tracks are no longer left unrated when the album has a rating.",
                 "targetAbi": "10.11.11.0",
