@@ -16,6 +16,7 @@ using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.Globalization;
 using Microsoft.Extensions.Logging;
 
@@ -32,6 +33,11 @@ namespace Jellyfin.Plugin.Chaperone.Providers
 
         // MusicBrainz allows at most 1 request/second globally.
         private static readonly Throttle MusicBrainzThrottle = new Throttle(TimeSpan.FromMilliseconds(1100));
+
+        // Deezer's public API is limited to ~50 requests / 5 seconds per IP. Space requests ~150ms
+        // apart (well under that) so a large library scan doesn't burst past the limit and start
+        // failing lookups. Global (static) so concurrent refreshes + the scan share one budget.
+        private static readonly Throttle DeezerThrottle = new Throttle(TimeSpan.FromMilliseconds(150));
 
         private static readonly string[] FeatMarkers =
         {
@@ -61,6 +67,52 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             _localization = localization;
             _logger = logger;
             _anime = new AnimeRatingResolver(httpClientFactory, libraryManager, logger);
+        }
+
+        /// <summary>
+        /// Returns true when Jellyfin can score the given rating string (i.e. it's a real,
+        /// recognized certification rather than blank, "NR", "Not Rated", "Unrated", "12", "0+", …).
+        /// </summary>
+        public bool IsRecognized(string? rating)
+        {
+            return !string.IsNullOrEmpty(rating) && _localization.GetRatingScore(rating) is not null;
+        }
+
+        /// <summary>
+        /// Decides whether Chaperone should try to rate an item: yes when it has no rating, or a
+        /// rating Jellyfin can't recognize (so "NR"/"12"/"0+" get re-examined), or on overwrite /
+        /// full refresh. A value Chaperone itself uses as its "gave up" marker (the configured
+        /// unidentified music/video rating) is treated as terminal and left alone.
+        /// </summary>
+        public bool ShouldRate(BaseItem item, MetadataRefreshOptions? options)
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config is null)
+            {
+                return false;
+            }
+
+            var isFullReplace = options is not null
+                && (options.ReplaceAllMetadata
+                    || options.MetadataRefreshMode == MetadataRefreshMode.FullRefresh);
+            if (config.OverwriteExisting || isFullReplace)
+            {
+                return true;
+            }
+
+            var current = item.OfficialRating;
+            if (string.IsNullOrEmpty(current))
+            {
+                return true;
+            }
+
+            if (string.Equals(current, config.UnidentifiedMusicRating, StringComparison.Ordinal)
+                || string.Equals(current, config.UnidentifiedVideoRating, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return !IsRecognized(current);
         }
 
         /// <summary>
@@ -120,19 +172,36 @@ namespace Jellyfin.Plugin.Chaperone.Providers
         /// </summary>
         public async Task<string?> GetMusicRatingAsync(Audio item, CancellationToken cancellationToken)
         {
+            var result = await GetMusicRatingResultAsync(item, cancellationToken).ConfigureAwait(false);
+            return result.Rating;
+        }
+
+        /// <summary>
+        /// Like <see cref="GetMusicRatingAsync"/> but also reports whether the lookup could not be
+        /// completed because of a transient failure (e.g. a Deezer rate limit or network error), so
+        /// callers can avoid mistaking a throttled request for an unidentifiable track.
+        /// </summary>
+        public async Task<MusicRatingResult> GetMusicRatingResultAsync(Audio item, CancellationToken cancellationToken)
+        {
             var config = Plugin.Instance?.Configuration;
             if (config is null || !config.EnableMusic)
             {
-                return null;
+                return new MusicRatingResult(null, false);
             }
 
             bool? isExplicit = null;
+            var transientFailure = false;
 
-            // 1) Fast path: fuzzy Deezer search by artist + normalized title (no throttle).
+            // 1) Fast path: fuzzy Deezer search by artist + normalized title (throttled).
             var fuzzy = FuzzyResult.Miss;
             try
             {
                 fuzzy = await GetExplicitByFuzzySearchAsync(item, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TransientLookupException ex)
+            {
+                transientFailure = true;
+                _logger.LogDebug(ex, "Chaperone: fuzzy Deezer lookup for '{Name}' failed transiently.", item.Name);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -167,6 +236,11 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                             isExplicit = await GetExplicitByIsrcAsync(isrc!, cancellationToken).ConfigureAwait(false);
                         }
                     }
+                    catch (TransientLookupException ex)
+                    {
+                        transientFailure = true;
+                        _logger.LogDebug(ex, "Chaperone: ISRC lookup for '{Name}' failed transiently.", item.Name);
+                    }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
                         _logger.LogDebug(ex, "Chaperone: ISRC path failed for '{Name}'.", item.Name);
@@ -177,11 +251,13 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             if (isExplicit is null)
             {
                 _logger.LogDebug("Chaperone: no confident match for '{Name}'; leaving unrated.", item.Name);
-                return null;
+                return new MusicRatingResult(null, transientFailure);
             }
 
             var newRating = isExplicit.Value ? config.ExplicitRating : config.CleanRating;
-            return string.IsNullOrWhiteSpace(newRating) ? null : newRating;
+            return new MusicRatingResult(
+                string.IsNullOrWhiteSpace(newRating) ? null : newRating,
+                false);
         }
 
         /// <summary>
@@ -210,6 +286,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                     config.TmdbApiKey,
                     tmdbId!,
                     country,
+                    IsRecognized,
                     _logger,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -219,7 +296,9 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 rating = await _anime.ResolveAsync(item, cancellationToken).ConfigureAwait(false);
             }
 
-            return string.IsNullOrWhiteSpace(rating) ? null : rating;
+            // Only ever hand back a rating Jellyfin can actually score — never a foreign format or
+            // "NR" string that would just trip the "unrecognized" block.
+            return IsRecognized(rating) ? rating : null;
         }
 
         /// <summary>
@@ -248,6 +327,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                     config.TmdbApiKey,
                     tmdbId!,
                     country,
+                    IsRecognized,
                     _logger,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -257,7 +337,8 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 rating = await _anime.ResolveAsync(item, cancellationToken).ConfigureAwait(false);
             }
 
-            return string.IsNullOrWhiteSpace(rating) ? null : rating;
+            // Only ever hand back a rating Jellyfin can actually score.
+            return IsRecognized(rating) ? rating : null;
         }
 
         private static string? GetProviderId(Audio item, string key)
@@ -333,7 +414,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             var client = _httpClientFactory.CreateClient(NamedClient.Default);
 
             using var response = await SendDeezerAsync(client, url, cancellationToken).ConfigureAwait(false);
-            if (response is null || !response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
                 return null;
             }
@@ -392,7 +473,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             var client = _httpClientFactory.CreateClient(NamedClient.Default);
 
             using var response = await SendDeezerAsync(client, url, cancellationToken).ConfigureAwait(false);
-            if (response is null || !response.IsSuccessStatusCode)
+            if (!response.IsSuccessStatusCode)
             {
                 return FuzzyResult.Miss;
             }
@@ -470,7 +551,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             return new FuzzyResult(FuzzyOutcome.Confident, bestExplicit);
         }
 
-        private async Task<HttpResponseMessage?> SendDeezerAsync(
+        private async Task<HttpResponseMessage> SendDeezerAsync(
             HttpClient client,
             string url,
             CancellationToken cancellationToken)
@@ -478,9 +559,26 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             const int maxAttempts = 3;
             for (var attempt = 1; attempt <= maxAttempts; attempt++)
             {
-                var response = await client
-                    .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-                    .ConfigureAwait(false);
+                HttpResponseMessage response;
+                try
+                {
+                    // Proactively throttle so we stay under Deezer's rate limit instead of relying
+                    // on the retry backstop below (which a big burst blows straight past).
+                    response = await DeezerThrottle.RunAsync(
+                        () => client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (HttpRequestException ex)
+                {
+                    // Network-level failure: transient, not a "no match".
+                    if (attempt == maxAttempts)
+                    {
+                        throw new TransientLookupException("Deezer request failed", ex);
+                    }
+
+                    await Task.Delay(200 * attempt, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
 
                 if (response.StatusCode != HttpStatusCode.TooManyRequests)
                 {
@@ -490,13 +588,15 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 response.Dispose();
                 if (attempt == maxAttempts)
                 {
-                    return null;
+                    // Rate-limited even after retries: transient, not a "no match". Signal it so the
+                    // caller doesn't mistake a throttled lookup for an unidentifiable track.
+                    throw new TransientLookupException("Deezer rate limit exceeded");
                 }
 
                 await Task.Delay(200 * attempt, cancellationToken).ConfigureAwait(false);
             }
 
-            return null;
+            throw new TransientLookupException("Deezer request exhausted retries");
         }
 
         private static string Normalize(string value)

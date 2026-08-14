@@ -35,6 +35,13 @@ namespace Jellyfin.Plugin.Chaperone.Configuration
         public string UnidentifiedMusicRating { get; set; } = "Unrated";
 
         /// <summary>
+        /// Gets or sets the rating applied to a movie or show that has no rating Jellyfin recognizes
+        /// (e.g. only a foreign certification, or an "NR"/"Not Rated" string) and that TMDb couldn't
+        /// resolve to a recognized one. Defaults to "Unrated"; set to empty to leave it as-is.
+        /// </summary>
+        public string UnidentifiedVideoRating { get; set; } = "Unrated";
+
+        /// <summary>
         /// Gets or sets the TMDb v3 API key.
         /// Defaults to Jellyfin's public TMDb key so the plugin works with zero user action;
         /// replace with your own key if desired.

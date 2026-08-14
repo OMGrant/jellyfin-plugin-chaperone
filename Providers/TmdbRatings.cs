@@ -23,6 +23,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             string apiKey,
             string tmdbId,
             string preferredCountry,
+            Func<string?, bool> isRecognized,
             ILogger logger,
             CancellationToken cancellationToken)
         {
@@ -78,7 +79,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            return Pick(byCountry, preferredCountry);
+            return Pick(byCountry, preferredCountry, isRecognized);
         }
 
         /// <summary>
@@ -89,6 +90,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             string apiKey,
             string tmdbId,
             string preferredCountry,
+            Func<string?, bool> isRecognized,
             ILogger logger,
             CancellationToken cancellationToken)
         {
@@ -133,7 +135,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            return Pick(byCountry, preferredCountry);
+            return Pick(byCountry, preferredCountry, isRecognized);
         }
 
         private static async Task<Dictionary<string, string>> FetchAsync(
@@ -170,28 +172,35 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             }
         }
 
-        private static string? Pick(Dictionary<string, string> byCountry, string preferredCountry)
+        private static string? Pick(
+            Dictionary<string, string> byCountry,
+            string preferredCountry,
+            Func<string?, bool> isRecognized)
         {
             if (byCountry.Count == 0)
             {
                 return null;
             }
 
+            // Prefer the configured country, then US, then any other region — but only a
+            // certification Jellyfin can actually score. A foreign-only format (e.g. "12", "0+")
+            // that Jellyfin can't recognize is skipped rather than written, since it would just
+            // trip the "unrecognized rating" block. Returns null when nothing is recognized.
             if (!string.IsNullOrWhiteSpace(preferredCountry)
                 && byCountry.TryGetValue(preferredCountry, out var preferred)
-                && !string.IsNullOrWhiteSpace(preferred))
+                && isRecognized(preferred))
             {
                 return preferred;
             }
 
-            if (byCountry.TryGetValue("US", out var us) && !string.IsNullOrWhiteSpace(us))
+            if (byCountry.TryGetValue("US", out var us) && isRecognized(us))
             {
                 return us;
             }
 
             foreach (var kvp in byCountry)
             {
-                if (!string.IsNullOrWhiteSpace(kvp.Value))
+                if (isRecognized(kvp.Value))
                 {
                     return kvp.Value;
                 }

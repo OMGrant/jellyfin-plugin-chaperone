@@ -105,6 +105,10 @@ namespace Jellyfin.Plugin.Chaperone
             var rated = 0;
             var processed = 0;
 
+            // Tracks whose lookup couldn't complete this run (Deezer/MusicBrainz transient failure).
+            // They're left blank rather than marked "Unrated", so a later scan retries them.
+            var transientTracks = new HashSet<Guid>();
+
             for (var i = 0; i < items.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -120,12 +124,27 @@ namespace Jellyfin.Plugin.Chaperone
                 var item = items[i];
                 scanned++;
 
-                var needsRating = string.IsNullOrEmpty(item.OfficialRating) || config.OverwriteExisting;
-                if (needsRating)
+                if (_ratingService.ShouldRate(item, null))
                 {
                     try
                     {
-                        var rating = await ResolveRatingAsync(item, cancellationToken).ConfigureAwait(false);
+                        string? rating;
+                        if (item is Audio audioItem)
+                        {
+                            var musicResult = await _ratingService
+                                .GetMusicRatingResultAsync(audioItem, cancellationToken).ConfigureAwait(false);
+                            rating = musicResult.Rating;
+                            if (rating is null && musicResult.TransientFailure)
+                            {
+                                // Don't let a rate-limited/failed lookup masquerade as a genuine miss.
+                                transientTracks.Add(item.Id);
+                            }
+                        }
+                        else
+                        {
+                            rating = await ResolveRatingAsync(item, cancellationToken).ConfigureAwait(false);
+                        }
+
                         if (!string.IsNullOrWhiteSpace(rating)
                             && !string.Equals(item.OfficialRating, rating, StringComparison.Ordinal))
                         {
@@ -140,6 +159,26 @@ namespace Jellyfin.Plugin.Chaperone
                                 "Chaperone scan: set '{Rating}' on '{Name}'.",
                                 rating,
                                 item.Name);
+                        }
+                        else if (string.IsNullOrWhiteSpace(rating)
+                            && (item is Movie || item is Series)
+                            && !string.IsNullOrWhiteSpace(config.UnidentifiedVideoRating)
+                            && !string.Equals(item.OfficialRating, config.UnidentifiedVideoRating, StringComparison.Ordinal))
+                        {
+                            // No recognized rating found: normalize an unrecognized value
+                            // (NR / Not Rated / 12 / 0+ / blank) to an honest, recognized-by-the-UI label.
+                            item.OfficialRating = config.UnidentifiedVideoRating;
+                            await _libraryManager.UpdateItemAsync(
+                                item,
+                                item.GetParent(),
+                                ItemUpdateType.MetadataEdit,
+                                cancellationToken).ConfigureAwait(false);
+                            rated++;
+                            _logger.LogInformation(
+                                "Chaperone scan: marked unrated {Kind} '{Name}' as '{Rating}'.",
+                                item is Movie ? "movie" : "show",
+                                item.Name,
+                                config.UnidentifiedVideoRating);
                         }
                     }
                     catch (OperationCanceledException)
@@ -291,6 +330,13 @@ namespace Jellyfin.Plugin.Chaperone
                         continue;
                     }
 
+                    if (transientTracks.Contains(track.Id))
+                    {
+                        // Lookup failed transiently this run — leave blank so a later scan retries it
+                        // rather than freezing it as "Unrated".
+                        continue;
+                    }
+
                     track.OfficialRating = config.UnidentifiedMusicRating;
                     await _libraryManager.UpdateItemAsync(
                         track,
@@ -307,9 +353,10 @@ namespace Jellyfin.Plugin.Chaperone
 
             progress.Report(100);
             _logger.LogInformation(
-                "Chaperone scan: complete. Scanned {Scanned}, rated {Rated}.",
+                "Chaperone scan: complete. Scanned {Scanned}, rated {Rated}, deferred {Deferred} track(s) after transient lookup failures.",
                 scanned,
-                rated);
+                rated,
+                transientTracks.Count);
 
             // Bulk rating edits leave Jellyfin's folder-level parental index stale: an album's or
             // artist's effective rating (what parental controls actually filter on) is only recomputed

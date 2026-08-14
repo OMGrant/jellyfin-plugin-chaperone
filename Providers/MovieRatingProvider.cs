@@ -43,9 +43,9 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 return ItemUpdateType.None;
             }
 
-            if (RatingGate.ShouldSkipExisting(item, config, options))
+            if (!_ratingService.ShouldRate(item, options))
             {
-                _logger.LogDebug("Chaperone: movie '{Name}' already rated; skipping.", item.Name);
+                _logger.LogDebug("Chaperone: movie '{Name}' already recognizably rated; skipping.", item.Name);
                 return ItemUpdateType.None;
             }
 

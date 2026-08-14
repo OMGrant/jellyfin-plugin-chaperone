@@ -92,6 +92,26 @@
                     </div>
                 </div>
 
+                <div class="selectContainer">
+                    <label class="selectLabel" for="UnidentifiedVideoRating">Unidentifiable movie/show rating</label>
+                    <select is="emby-select" id="UnidentifiedVideoRating" class="emby-select">
+                        <option value="Unrated">Unrated (honest label)</option>
+                        <option value="">Leave as-is</option>
+                        <option value="G">G</option>
+                        <option value="PG">PG</option>
+                        <option value="PG-13">PG-13</option>
+                        <option value="R">R</option>
+                        <option value="TV-MA">TV-MA</option>
+                    </select>
+                    <div class="fieldDescription">
+                        Applied to a movie or show that TMDb couldn't give a rating Jellyfin recognizes —
+                        including cleaning up stray &quot;NR&quot;, &quot;Not Rated&quot;, or foreign
+                        formats like &quot;12&quot;/&quot;0+&quot;. Default &quot;Unrated&quot; normalizes
+                        them to one honest label; choose TV-MA to hide them, or &quot;Leave as-is&quot; to
+                        keep whatever value is there.
+                    </div>
+                </div>
+
                 <div class="inputContainer">
                     <input is="emby-input" type="text" id="TmdbApiKey" label="TMDb API key (v3)" />
                     <div class="fieldDescription">
@@ -204,6 +224,9 @@
                     var umr = config.UnidentifiedMusicRating;
                     document.querySelector('#UnidentifiedMusicRating').value =
                         (umr === undefined || umr === null) ? 'Unrated' : umr;
+                    var uvr = config.UnidentifiedVideoRating;
+                    document.querySelector('#UnidentifiedVideoRating').value =
+                        (uvr === undefined || uvr === null) ? 'Unrated' : uvr;
                     document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
                     document.querySelector('#EnableMusic').checked = config.EnableMusic;
                     document.querySelector('#EnableMovies').checked = config.EnableMovies;
@@ -225,6 +248,7 @@
                 config.ExplicitRating = document.querySelector('#ExplicitRating').value;
                 config.CleanRating = document.querySelector('#CleanRating').value;
                 config.UnidentifiedMusicRating = document.querySelector('#UnidentifiedMusicRating').value;
+                config.UnidentifiedVideoRating = document.querySelector('#UnidentifiedVideoRating').value;
                 config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
                 config.EnableMusic = document.querySelector('#EnableMusic').checked;
                 config.EnableMovies = document.querySelector('#EnableMovies').checked;

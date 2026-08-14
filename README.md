@@ -24,6 +24,8 @@ Jellyfin's parental controls are only as good as the `OfficialRating` metadata o
 
 Ratings are written using Jellyfin's standard scale (`TV-G`, `TV-PG`, `TV-14`, `TV-MA`, and the MPAA equivalents), which interoperate numerically — so a kid restricted to `TV-14` is correctly blocked from `TV-MA` and `R` content regardless of which scale a given item uses.
 
+For movies and shows, Chaperone also **re-examines items already tagged with something Jellyfin can't score** — `NR`, `Not Rated`, or a foreign format like `12` / `0+` — not just blank ones, and it **only ever writes a certification Jellyfin recognizes** (never a foreign string that would silently trip the "unrecognized" block). Anything it still can't resolve is normalized to the configurable **Unidentifiable movie/show rating** (default `Unrated`), so the field is always a recognized value.
+
 ### Explicit music → a real rating
 
 Explicit tracks get **`TV-MA`** by default and clean tracks get **`TV-G`** (both configurable). That turns Deezer's explicit flag into something Jellyfin's parental controls can actually enforce.
