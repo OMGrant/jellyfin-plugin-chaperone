@@ -171,16 +171,19 @@ namespace Jellyfin.Plugin.Chaperone
                 var album = albums[i];
                 scanned++;
 
-                var needsRating = string.IsNullOrEmpty(album.OfficialRating) || config.OverwriteExisting;
-                if (needsRating && album is MusicAlbum musicAlbum)
+                if (album is MusicAlbum musicAlbum)
                 {
                     try
                     {
-                        var rating = _ratingService.DeriveAlbumRating(musicAlbum);
-                        if (!string.IsNullOrWhiteSpace(rating)
-                            && !string.Equals(album.OfficialRating, rating, StringComparison.Ordinal))
+                        // Derive the album's own rating from its identified tracks (least restrictive).
+                        var derived = _ratingService.DeriveAlbumRating(musicAlbum);
+
+                        var albumNeedsRating = string.IsNullOrEmpty(album.OfficialRating) || config.OverwriteExisting;
+                        if (!string.IsNullOrWhiteSpace(derived)
+                            && albumNeedsRating
+                            && !string.Equals(album.OfficialRating, derived, StringComparison.Ordinal))
                         {
-                            album.OfficialRating = rating;
+                            album.OfficialRating = derived;
                             await _libraryManager.UpdateItemAsync(
                                 album,
                                 album.GetParent(),
@@ -189,9 +192,40 @@ namespace Jellyfin.Plugin.Chaperone
                             rated++;
                             _logger.LogInformation(
                                 "Chaperone scan: set '{Rating}' on album '{Name}'.",
-                                rating,
+                                derived,
                                 album.Name);
                         }
+
+                        // Third fallback: a track that neither Deezer nor MusicBrainz could identify
+                        // inherits its album's rating, so the plugin's promise to fill the gap holds
+                        // instead of leaving the track unrated (and, for a rated album, needlessly hidden).
+                        var albumRating = !string.IsNullOrWhiteSpace(derived) ? derived : album.OfficialRating;
+                        if (!string.IsNullOrWhiteSpace(albumRating))
+                        {
+                            foreach (var track in GetChildAudio(musicAlbum))
+                            {
+                                if (!string.IsNullOrEmpty(track.OfficialRating))
+                                {
+                                    continue;
+                                }
+
+                                track.OfficialRating = albumRating;
+                                await _libraryManager.UpdateItemAsync(
+                                    track,
+                                    track.GetParent(),
+                                    ItemUpdateType.MetadataEdit,
+                                    cancellationToken).ConfigureAwait(false);
+                                rated++;
+                                _logger.LogInformation(
+                                    "Chaperone scan: inherited album rating '{Rating}' for unmatched track '{Name}'.",
+                                    albumRating,
+                                    track.Name);
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
                     }
                     catch (Exception ex)
                     {
@@ -216,6 +250,19 @@ namespace Jellyfin.Plugin.Chaperone
             {
                 IncludeItemTypes = new[] { kind },
                 Recursive = true,
+                IsVirtualItem = false
+            };
+
+            return _libraryManager.GetItemList(query);
+        }
+
+        private IReadOnlyList<BaseItem> GetChildAudio(BaseItem album)
+        {
+            var query = new InternalItemsQuery
+            {
+                Parent = album,
+                Recursive = true,
+                IncludeItemTypes = new[] { BaseItemKind.Audio },
                 IsVirtualItem = false
             };
 
