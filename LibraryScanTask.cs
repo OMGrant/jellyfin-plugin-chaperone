@@ -310,6 +310,17 @@ namespace Jellyfin.Plugin.Chaperone
                 "Chaperone scan: complete. Scanned {Scanned}, rated {Rated}.",
                 scanned,
                 rated);
+
+            // Bulk rating edits leave Jellyfin's folder-level parental index stale: an album's or
+            // artist's effective rating (what parental controls actually filter on) is only recomputed
+            // during a library scan, not when individual items are edited. Queue one so the new ratings
+            // take effect for restricted users without anyone having to run "Scan Media Library" by hand.
+            if (rated > 0)
+            {
+                _logger.LogInformation(
+                    "Chaperone scan: queuing a library scan so parental filtering picks up the new ratings.");
+                _libraryManager.QueueLibraryScan();
+            }
         }
 
         private IReadOnlyList<BaseItem> GetItems(BaseItemKind kind)

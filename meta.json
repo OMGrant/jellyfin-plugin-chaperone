@@ -1,6 +1,6 @@
 {
     "category": "Metadata",
-    "changelog": "Label unidentifiable tracks \"Unrated\" (final fallback, configurable) so nothing is left blank; rate all artists TV-G to keep artist browsing working when \"block unrecognized rating\" is on (documented workaround); expose album rating, album-inheritance, and artist rating as toggles.",
+    "changelog": "After its scan, Chaperone now queues a Jellyfin library scan so folder-level parental filtering picks up the new album/artist/track ratings automatically (previously required a manual \"Scan Media Library\").",
     "description": "Fills in missing parental ratings for music (Deezer), movies & shows (TMDb), and anime (MyAnimeList) so parental controls work across the whole library.",
     "guid": "1207208a-b4d4-4065-b4b6-2f126ad01861",
     "name": "Chaperone",
@@ -9,7 +9,7 @@
     "targetAbi": "10.11.11.0",
     "framework": "net9.0",
     "timestamp": "2026-08-13T00:00:00Z",
-    "version": "1.3.0.0",
+    "version": "1.3.1.0",
     "status": "Active",
     "autoUpdate": false,
     "imagePath": "thumb.png"
