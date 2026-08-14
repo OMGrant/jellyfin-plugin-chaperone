@@ -9,6 +9,14 @@
         "imageUrl": "https://raw.githubusercontent.com/OMGrant/jellyfin-plugin-chaperone/main/thumb.png",
         "versions": [
             {
+                "version": "1.4.0.0",
+                "changelog": "Movies/shows: re-examine NR/Not Rated/unrecognized ratings, only write ratings Jellyfin recognizes, label the rest 'Unrated'. Throttle Deezer to avoid rate-limit failures on big scans, and defer transiently-failed lookups instead of freezing them as Unrated.",
+                "targetAbi": "10.11.11.0",
+                "sourceUrl": "https://github.com/OMGrant/jellyfin-plugin-chaperone/releases/download/v1.4.0.0/chaperone_1.4.0.0.zip",
+                "checksum": "58ae412774fdbbf2fa03c82c512e9c07",
+                "timestamp": "2026-08-14T09:20:19Z"
+            },
+            {
                 "version": "1.3.1.0",
                 "changelog": "After its scan, Chaperone queues a Jellyfin library scan so folder-level parental filtering picks up the new album/artist/track ratings automatically (previously required a manual 'Scan Media Library').",
                 "targetAbi": "10.11.11.0",
