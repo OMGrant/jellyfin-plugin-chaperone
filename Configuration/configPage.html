@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Chaperone</title>
+</head>
+<body>
+<div id="ChaperoneConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <div style="max-width: 54em;">
+            <div class="verticalSection">
+                <div class="sectionTitleContainer flex align-items-center">
+                    <h2 class="sectionTitle">Chaperone</h2>
+                </div>
+                <div class="fieldDescription">
+                    Fills in missing parental ratings for music (Deezer), movies &amp; shows (TMDb),
+                    and anime (MyAnimeList) so parental controls work across the whole library.
+                </div>
+            </div>
+
+            <div class="verticalSection">
+                <h3 class="sectionTitle">Library scan</h3>
+                <div class="fieldDescription" style="margin-bottom:1em;">
+                    Run a one-off pass over your whole library, filling in ratings for items that don't
+                    have one yet (or all items when &quot;Overwrite existing ratings&quot; is on). Your current
+                    settings are saved first. Progress appears under Dashboard &rarr; Scheduled Tasks.
+                </div>
+                <button is="emby-button" type="button" id="RunScanButton" class="raised block emby-button">
+                    <span>Run full library scan</span>
+                </button>
+            </div>
+
+            <form id="ChaperoneConfigForm">
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Settings</h3>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="Enabled" />
+                        <span>Enabled</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Master switch for the whole plugin.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="ExplicitRating" label="Explicit music rating" />
+                    <div class="fieldDescription">Rating applied to explicit music tracks (default TV-MA).</div>
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="CleanRating" label="Clean music rating" />
+                    <div class="fieldDescription">Rating applied to clean music tracks (default TV-G).</div>
+                </div>
+
+                <div class="inputContainer">
+                    <input is="emby-input" type="text" id="TmdbApiKey" label="TMDb API key (v3)" />
+                    <div class="fieldDescription">
+                        Used for movie and show certifications. Pre-filled with Jellyfin's public key so it
+                        works out of the box; you may replace it with your own TMDb v3 key.
+                    </div>
+                </div>
+
+                <div class="verticalSection">
+                    <h3 class="sectionTitle">Content types</h3>
+                </div>
+
+                <div class="checkboxContainer">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="EnableMusic" />
+                        <span>Rate music (Deezer)</span>
+                    </label>
+                </div>
+
+                <div class="checkboxContainer">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="EnableMovies" />
+                        <span>Rate movies (TMDb)</span>
+                    </label>
+                </div>
+
+                <div class="checkboxContainer">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="EnableShows" />
+                        <span>Rate shows (TMDb)</span>
+                    </label>
+                </div>
+
+                <div class="checkboxContainer">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="EnableAnime" />
+                        <span>Anime fallback (MyAnimeList)</span>
+                    </label>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="OverwriteExisting" />
+                        <span>Overwrite existing ratings</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        If enabled, replace a rating that is already set. Otherwise only blank ratings are filled.
+                    </div>
+                </div>
+
+                <div>
+                    <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                        <span>Save</span>
+                    </button>
+                </div>
+            </form>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        var ChaperoneConfig = {
+            pluginUniqueId: '1207208a-b4d4-4065-b4b6-2f126ad01861'
+        };
+
+        document.querySelector('#ChaperoneConfigPage')
+            .addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                ApiClient.getPluginConfiguration(ChaperoneConfig.pluginUniqueId).then(function (config) {
+                    document.querySelector('#Enabled').checked = config.Enabled;
+                    document.querySelector('#OverwriteExisting').checked = config.OverwriteExisting;
+                    document.querySelector('#ExplicitRating').value = config.ExplicitRating || '';
+                    document.querySelector('#CleanRating').value = config.CleanRating || '';
+                    document.querySelector('#TmdbApiKey').value = config.TmdbApiKey || '';
+                    document.querySelector('#EnableMusic').checked = config.EnableMusic;
+                    document.querySelector('#EnableMovies').checked = config.EnableMovies;
+                    document.querySelector('#EnableShows').checked = config.EnableShows;
+                    document.querySelector('#EnableAnime').checked = config.EnableAnime;
+                    Dashboard.hideLoadingMsg();
+                });
+            });
+
+        function chaperoneSaveConfig() {
+            return ApiClient.getPluginConfiguration(ChaperoneConfig.pluginUniqueId).then(function (config) {
+                config.Enabled = document.querySelector('#Enabled').checked;
+                config.OverwriteExisting = document.querySelector('#OverwriteExisting').checked;
+                config.ExplicitRating = document.querySelector('#ExplicitRating').value;
+                config.CleanRating = document.querySelector('#CleanRating').value;
+                config.TmdbApiKey = document.querySelector('#TmdbApiKey').value;
+                config.EnableMusic = document.querySelector('#EnableMusic').checked;
+                config.EnableMovies = document.querySelector('#EnableMovies').checked;
+                config.EnableShows = document.querySelector('#EnableShows').checked;
+                config.EnableAnime = document.querySelector('#EnableAnime').checked;
+                return ApiClient.updatePluginConfiguration(ChaperoneConfig.pluginUniqueId, config);
+            });
+        }
+
+        document.querySelector('#ChaperoneConfigForm')
+            .addEventListener('submit', function (e) {
+                e.preventDefault();
+                Dashboard.showLoadingMsg();
+                chaperoneSaveConfig().then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                });
+                return false;
+            });
+
+        document.querySelector('#RunScanButton')
+            .addEventListener('click', function () {
+                Dashboard.showLoadingMsg();
+                // Persist current settings first, then locate and start the scan task.
+                chaperoneSaveConfig().then(function () {
+                    return ApiClient.getScheduledTasks();
+                }).then(function (tasks) {
+                    Dashboard.hideLoadingMsg();
+                    var task = (tasks || []).filter(function (t) {
+                        return t.Key === 'ChaperoneLibraryScan'
+                            || (t.Name && t.Name.indexOf('Chaperone') !== -1);
+                    })[0];
+
+                    if (!task) {
+                        Dashboard.alert('Chaperone scan task not found. Make sure the plugin is loaded, then try again.');
+                        return;
+                    }
+
+                    if (task.State === 'Running') {
+                        Dashboard.alert('Chaperone scan is already running — track progress under Dashboard → Scheduled Tasks.');
+                        return;
+                    }
+
+                    ApiClient.startScheduledTask(task.Id).then(function () {
+                        Dashboard.alert('Chaperone scan started — track progress under Dashboard → Scheduled Tasks.');
+                    });
+                }).catch(function () {
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Could not start the Chaperone scan. Check the server logs.');
+                });
+            });
+    </script>
+</div>
+</body>
+</html>

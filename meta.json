@@ -1,0 +1,16 @@
+{
+    "category": "Metadata",
+    "changelog": "Initial release: Deezer-first music ratings (ISRC fallback), TMDb movie/show certifications, MyAnimeList anime fallback, and a manual full-library scan task.",
+    "description": "Fills in missing parental ratings for music (Deezer), movies & shows (TMDb), and anime (MyAnimeList) so parental controls work across the whole library.",
+    "guid": "1207208a-b4d4-4065-b4b6-2f126ad01861",
+    "name": "Chaperone",
+    "overview": "Automatic parental ratings across music, movies, shows, and anime.",
+    "owner": "OMGrant",
+    "targetAbi": "10.11.11.0",
+    "framework": "net9.0",
+    "timestamp": "2026-08-13T00:00:00Z",
+    "version": "1.0.0.0",
+    "status": "Active",
+    "autoUpdate": false,
+    "imagePath": "thumb.png"
+}

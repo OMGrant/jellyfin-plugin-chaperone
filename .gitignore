@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+publish/
+dist/
+
+# Working / backup assets
+thumb.orig.jpg
+
+# IDE / OS
+.vs/
+.idea/
+*.user
+.DS_Store
