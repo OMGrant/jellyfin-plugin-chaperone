@@ -42,10 +42,19 @@ Explicit tracks get **`TV-MA`** by default and clean tracks get **`TV-G`** (both
 
 ## Installation
 
-### From a release
+### Add the plugin repository (recommended)
 
-1. Download the latest `Chaperone_x.y.z` package from the [Releases](https://github.com/OMGrant/jellyfin-plugin-chaperone/releases) page.
-2. Copy the folder into your Jellyfin `plugins` directory (e.g. `/var/lib/jellyfin/plugins/`).
+1. In Jellyfin, go to **Dashboard → Plugins → Repositories** and add a new repository with this URL:
+   ```
+   https://raw.githubusercontent.com/OMGrant/jellyfin-plugin-chaperone/main/manifest.json
+   ```
+2. Open the **Catalog** tab, find **Chaperone** under *Metadata*, and install it.
+3. Restart Jellyfin. Updates then show up in the catalog automatically.
+
+### From a release (manual)
+
+1. Download `chaperone_x.y.z.zip` from the [Releases](https://github.com/OMGrant/jellyfin-plugin-chaperone/releases) page.
+2. Extract it into a new folder under your Jellyfin `plugins` directory (e.g. `/var/lib/jellyfin/plugins/Chaperone_1.0.0.0/`).
 3. Restart Jellyfin. Chaperone appears under **Dashboard → Plugins**.
 
 ### Build it yourself
