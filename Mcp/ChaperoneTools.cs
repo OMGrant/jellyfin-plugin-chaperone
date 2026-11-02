@@ -15,6 +15,7 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
+using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Chaperone.Mcp
@@ -32,6 +33,7 @@ namespace Jellyfin.Plugin.Chaperone.Mcp
         private readonly RatingService _ratings;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<ChaperoneTools> _logger;
+        private readonly ITaskManager _taskManager;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ChaperoneTools"/> class.
@@ -40,8 +42,10 @@ namespace Jellyfin.Plugin.Chaperone.Mcp
             ILibraryManager libraryManager,
             RatingService ratings,
             IHttpClientFactory httpClientFactory,
-            ILogger<ChaperoneTools> logger)
+            ILogger<ChaperoneTools> logger,
+            ITaskManager taskManager)
         {
+            _taskManager = taskManager;
             _libraryManager = libraryManager;
             _ratings = ratings;
             _httpClientFactory = httpClientFactory;
@@ -397,9 +401,10 @@ namespace Jellyfin.Plugin.Chaperone.Mcp
 
         private void QueueScanSoon()
         {
-            // Folder-level parental ratings only refresh on a library scan; one scan 2 minutes after the last
-            // applied rating covers a whole batch of proposals.
-            var timer = new Timer(_ => _libraryManager.QueueLibraryScan(), null, TimeSpan.FromMinutes(2), Timeout.InfiniteTimeSpan);
+            // Albums take their rating from their tracks, and folder-level parental ratings only refresh on a
+            // library scan. Chaperone's own scan task does both (it re-derives album ratings, then queues a library
+            // scan), so run it once, 2 minutes after the last applied rating, to cover a whole batch of proposals.
+            var timer = new Timer(_ => _taskManager.QueueScheduledTask<LibraryScanTask>(), null, TimeSpan.FromMinutes(2), Timeout.InfiniteTimeSpan);
             Interlocked.Exchange(ref _scanDebounce, timer)?.Dispose();
         }
     }

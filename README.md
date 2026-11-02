@@ -40,7 +40,7 @@ Jellyfin's parental controls are only as good as the `OfficialRating` on each it
 - Chaperone is an **MCP server**. Claude, a local model, or any MCP client can list what's still unrated, research it, and **propose a rating with evidence**.
 - **Evidence is checked:** Chaperone fetches the cited page and records whether the quoted text is really there.
 - **Trusted clients** apply directly. Proposals from everyone else **wait for your Approve / Reject** on the settings page.
-- Applied ratings are **locked** against metadata refreshes, and every decision is logged with who made it and why.
+- Applied ratings are **locked** against metadata refreshes, and every decision is logged with who made it and why. Two minutes after the last applied rating, Chaperone re-runs its scan so albums pick up their tracks' new ratings.
 
 **Runs itself**
 - **Rates on import**: metadata providers for tracks, albums, artists, movies, and series.
@@ -67,7 +67,7 @@ Requires **Jellyfin 12.2 or later**. On Jellyfin 10.11, use Chaperone 1.4.0.0.
 ### Manual
 
 1. Download `chaperone_x.y.z.w.zip` from [Releases](https://github.com/OMGrant/jellyfin-plugin-chaperone/releases).
-2. Extract it into a new folder under Jellyfin's `plugins` directory (e.g. `/var/lib/jellyfin/plugins/Chaperone_1.7.0.0/`).
+2. Extract it into a new folder under Jellyfin's `plugins` directory (e.g. `/var/lib/jellyfin/plugins/Chaperone_1.7.1.0/`).
 3. Restart Jellyfin.
 
 ### Build it yourself
@@ -179,7 +179,7 @@ Lyrics are fetched and checked **on your server**. When an MCP client cites evid
 
 | Chaperone | Jellyfin | .NET |
 | --- | --- | --- |
-| 1.5.0.0 – 1.7.0.0 | 12.2+ | 10 |
+| 1.5.0.0 – 1.7.1.0 | 12.2+ | 10 |
 | 1.0.0.0 – 1.4.0.0 | 10.11 | 9 |
 
 Full history is in the [changelog in `manifest.json`](manifest.json) and on the [Releases](https://github.com/OMGrant/jellyfin-plugin-chaperone/releases) page.
