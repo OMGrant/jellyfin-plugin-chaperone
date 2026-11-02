@@ -54,7 +54,16 @@ namespace Jellyfin.Plugin.Chaperone
         /// <inheritdoc />
         public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
         {
-            return Array.Empty<TaskTriggerInfo>();
+            // Daily at 3 AM, so music and movies added since the last run get rated without anyone remembering to.
+            // Servers can still change or remove this under Dashboard -> Scheduled Tasks.
+            return new[]
+            {
+                new TaskTriggerInfo
+                {
+                    Type = TaskTriggerInfoType.DailyTrigger,
+                    TimeOfDayTicks = TimeSpan.FromHours(3).Ticks
+                }
+            };
         }
 
         /// <inheritdoc />
