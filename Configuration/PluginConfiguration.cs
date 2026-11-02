@@ -94,5 +94,48 @@ namespace Jellyfin.Plugin.Chaperone.Configuration
         /// </para>
         /// </summary>
         public bool RateAllArtistsBrowsable { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether Apple Music's catalogue (the free iTunes Search API)
+        /// is used as a second source of per-track explicit flags when Deezer and MusicBrainz miss.
+        /// </summary>
+        public bool EnableItunes { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether lyrics are used as a last music source: a track whose
+        /// own title says it is an instrumental/karaoke version, or that LRCLIB marks instrumental, is
+        /// clean; otherwise LRCLIB's lyrics are checked against <see cref="LyricsExplicitWords"/>.
+        /// </summary>
+        public bool EnableLyrics { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the comma-separated words that make a lyric explicit. Each entry matches as a
+        /// whole word, or as a word prefix when it ends in "*". Mild words (damn, hell…) are left out on
+        /// purpose, matching how streaming services apply their explicit flag.
+        /// </summary>
+        public string LyricsExplicitWords { get; set; } =
+            "fuck*, motherfuck*, shit*, bullshit*, cunt*, bitch*, nigga*, nigger*, faggot*, whore*, slut*";
+
+        /// <summary>
+        /// Gets or sets a value indicating whether items Chaperone previously labeled with its
+        /// "unidentified" rating (default "Unrated") are looked up again on every scan, so new data
+        /// sources — or data that appeared upstream since — can still rate them. A miss leaves them as-is.
+        /// </summary>
+        public bool RecheckUnidentified { get; set; } = true;
+
+        /// <summary>
+        /// Gets or sets the comma-separated names of libraries holding fan edits. A movie there with no
+        /// rating of its own is rated from its source film or show, found on TMDb from the edit's title
+        /// (e.g. "Star Wars - The Empire Strikes Back Revisited (Adywan)" is rated as The Empire Strikes Back).
+        /// Empty disables this.
+        /// </summary>
+        public string FanEditLibraries { get; set; } = "Fan Edits";
+
+        /// <summary>
+        /// Gets or sets a value indicating whether a movie or show whose only certifications are foreign
+        /// is given the nearest US equivalent (e.g. German "12" → PG-13, Japanese "G" → G) instead of
+        /// the foreign label. Approximate by nature, so off by default.
+        /// </summary>
+        public bool MapForeignRatings { get; set; }
     }
 }

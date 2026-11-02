@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/OMGrant/jellyfin-plugin-chaperone/main/thumb.png",
     "versions": [
       {
+        "version": "1.6.0.0",
+        "changelog": "More sources for unrated items: Apple Music (iTunes Search) explicit flags; LRCLIB lyrics (instrumentals are clean, lyrics checked against a configurable word list); fan edits rated from their source film/show; optional foreign-to-US rating mapping; items previously marked Unrated are re-checked; LRCLIB busy answers are retried.",
+        "targetAbi": "12.2.0.0",
+        "sourceUrl": "https://github.com/OMGrant/jellyfin-plugin-chaperone/releases/download/v1.6.0.0/chaperone_1.6.0.0.zip",
+        "checksum": "64bebfcfa833974f02bd517f17e84931",
+        "timestamp": "2026-11-02T00:00:00Z"
+      },
+      {
         "version": "1.5.0.0",
         "changelog": "Rebuilt for Jellyfin 12 (.NET 10). The library scan now runs daily at 3 AM by default (change or remove it under Dashboard -> Scheduled Tasks).",
         "targetAbi": "12.2.0.0",

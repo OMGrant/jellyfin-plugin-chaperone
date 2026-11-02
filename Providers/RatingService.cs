@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Net;
@@ -6,6 +7,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
@@ -38,6 +40,18 @@ namespace Jellyfin.Plugin.Chaperone.Providers
         // apart (well under that) so a large library scan doesn't burst past the limit and start
         // failing lookups. Global (static) so concurrent refreshes + the scan share one budget.
         private static readonly Throttle DeezerThrottle = new Throttle(TimeSpan.FromMilliseconds(150));
+
+        // The iTunes Search API allows roughly 20 requests per minute per IP.
+        private static readonly Throttle ItunesThrottle = new Throttle(TimeSpan.FromMilliseconds(3100));
+
+        // LRCLIB is a free community service with no published limit; stay polite at 1 request/second.
+        private static readonly Throttle LrclibThrottle = new Throttle(TimeSpan.FromMilliseconds(1000));
+
+        // A track whose own title says it's an instrumental/karaoke version has no lyrics, so it is
+        // clean — and must never be judged by the vocal version's explicit flag or lyrics.
+        private static readonly Regex InstrumentalTitle = new Regex(
+            @"[\(\[\-–]\s*(instrumental|inst\.|karaoke|backing track)\b|\binstrumental version\b",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         private static readonly string[] FeatMarkers =
         {
@@ -109,7 +123,9 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             if (string.Equals(current, config.UnidentifiedMusicRating, StringComparison.Ordinal)
                 || string.Equals(current, config.UnidentifiedVideoRating, StringComparison.Ordinal))
             {
-                return false;
+                // Our own "gave up" marker: look again (new sources, or upstream data that has appeared
+                // since) unless that's switched off. A miss leaves the marker in place.
+                return config.RecheckUnidentified;
             }
 
             return !IsRecognized(current);
@@ -192,6 +208,14 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             bool? isExplicit = null;
             var transientFailure = false;
 
+            // 0) An instrumental/karaoke version (by its own title) has no lyrics: clean. Checked first,
+            // because the fuzzy searches below drop bracketed qualifiers and would match the vocal version.
+            if (config.EnableLyrics && IsInstrumentalTitle(item.Name))
+            {
+                _logger.LogDebug("Chaperone: '{Name}' is an instrumental by its title; clean.", item.Name);
+                return new MusicRatingResult(string.IsNullOrWhiteSpace(config.CleanRating) ? null : config.CleanRating, false);
+            }
+
             // 1) Fast path: fuzzy Deezer search by artist + normalized title (throttled).
             var fuzzy = FuzzyResult.Miss;
             try
@@ -248,6 +272,50 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 }
             }
 
+            // 3) Apple Music's catalogue (iTunes Search): a second explicit-flag source with different coverage.
+            if (isExplicit is null && config.EnableItunes)
+            {
+                try
+                {
+                    isExplicit = await GetExplicitByItunesAsync(item, cancellationToken).ConfigureAwait(false);
+                    if (isExplicit is not null)
+                    {
+                        _logger.LogDebug("Chaperone: iTunes match for '{Name}' (explicit={Explicit}).", item.Name, isExplicit);
+                    }
+                }
+                catch (TransientLookupException ex)
+                {
+                    transientFailure = true;
+                    _logger.LogDebug(ex, "Chaperone: iTunes lookup for '{Name}' failed transiently.", item.Name);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "Chaperone: iTunes lookup failed for '{Name}'.", item.Name);
+                }
+            }
+
+            // 4) Lyrics (LRCLIB): instrumental -> clean; otherwise check the words themselves.
+            if (isExplicit is null && config.EnableLyrics)
+            {
+                try
+                {
+                    isExplicit = await GetExplicitByLyricsAsync(item, config.LyricsExplicitWords, cancellationToken).ConfigureAwait(false);
+                    if (isExplicit is not null)
+                    {
+                        _logger.LogDebug("Chaperone: lyrics decided '{Name}' (explicit={Explicit}).", item.Name, isExplicit);
+                    }
+                }
+                catch (TransientLookupException ex)
+                {
+                    transientFailure = true;
+                    _logger.LogDebug(ex, "Chaperone: LRCLIB lookup for '{Name}' failed transiently.", item.Name);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "Chaperone: LRCLIB lookup failed for '{Name}'.", item.Name);
+                }
+            }
+
             if (isExplicit is null)
             {
                 _logger.LogDebug("Chaperone: no confident match for '{Name}'; leaving unrated.", item.Name);
@@ -288,7 +356,14 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                     country,
                     IsRecognized,
                     _logger,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    config.MapForeignRatings).ConfigureAwait(false);
+            }
+
+            // A fan edit has no TMDb entry of its own: rate it as its source film or show.
+            if (string.IsNullOrWhiteSpace(rating) && config.EnableMovies && IsFanEdit(item, config.FanEditLibraries))
+            {
+                rating = await GetFanEditRatingAsync(item, config, cancellationToken).ConfigureAwait(false);
             }
 
             if (string.IsNullOrWhiteSpace(rating) && config.EnableAnime && _anime.LooksLikeAnime(item))
@@ -329,7 +404,8 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                     country,
                     IsRecognized,
                     _logger,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    config.MapForeignRatings).ConfigureAwait(false);
             }
 
             if (string.IsNullOrWhiteSpace(rating) && config.EnableAnime && _anime.LooksLikeAnime(item))
@@ -339,6 +415,366 @@ namespace Jellyfin.Plugin.Chaperone.Providers
 
             // Only ever hand back a rating Jellyfin can actually score.
             return IsRecognized(rating) ? rating : null;
+        }
+
+        /// <summary>
+        /// True when a track's own title marks it as an instrumental, karaoke or backing-track version.
+        /// </summary>
+        public static bool IsInstrumentalTitle(string? title)
+        {
+            return !string.IsNullOrWhiteSpace(title) && InstrumentalTitle.IsMatch(title);
+        }
+
+        /// <summary>
+        /// Checks lyrics against a comma-separated word list ("word" = whole word, "word*" = prefix).
+        /// </summary>
+        public static bool LyricsContainExplicit(string lyrics, string wordList)
+        {
+            if (string.IsNullOrWhiteSpace(lyrics) || string.IsNullOrWhiteSpace(wordList))
+            {
+                return false;
+            }
+
+            foreach (var raw in wordList.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var prefix = raw.EndsWith('*');
+                var word = Regex.Escape(prefix ? raw.TrimEnd('*') : raw);
+                if (word.Length == 0)
+                {
+                    continue;
+                }
+
+                var pattern = prefix ? $@"\b{word}" : $@"\b{word}\b";
+                if (Regex.IsMatch(lyrics, pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool IsFanEdit(BaseItem item, string? libraries)
+        {
+            if (string.IsNullOrWhiteSpace(libraries))
+            {
+                return false;
+            }
+
+            var names = new HashSet<string>(
+                libraries.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                foreach (var folder in _libraryManager.GetCollectionFolders(item))
+                {
+                    if (names.Contains(folder.Name))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Chaperone: couldn't resolve the library of '{Name}'.", item.Name);
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Builds TMDb search terms from a fan edit's title, most specific first: e.g.
+        /// "Star Wars - The Empire Strikes Back Revisited (Adywan)" -> "Star Wars The Empire Strikes Back",
+        /// "The Empire Strikes Back", "Star Wars"; "Obi-Wan Kenobi: The Patterson Cut" -> "Obi-Wan Kenobi".
+        /// </summary>
+        public static IReadOnlyList<string> FanEditSearchTerms(string title)
+        {
+            var noBrackets = Regex.Replace(title, @"\s*[\(\[][^\)\]]*[\)\]]", string.Empty);
+            var parts = Regex.Split(noBrackets, @"\s+-\s+|:\s+")
+                .Select(p => Regex.Replace(
+                    p,
+                    @"\b(revisited|despecialized|remastered|extended|fan ?edit|edition|restoration|re-?edit|recut|cut)\b",
+                    string.Empty,
+                    RegexOptions.IgnoreCase).Trim())
+                // drop segments that only named the editor/cut ("The Patterson Cut" -> "The Patterson")
+                // or a part number ("Book I"), keeping real titles
+                .Where(p => p.Length > 0
+                    && !Regex.IsMatch(p, @"^the\s+\w+$", RegexOptions.IgnoreCase)
+                    && !Regex.IsMatch(p, @"^(book|part|chapter|vol\.?|volume)\s+[ivx\d]+$", RegexOptions.IgnoreCase))
+                .ToList();
+
+            var terms = new List<string>();
+            void Add(string t)
+            {
+                t = Regex.Replace(t, @"\s+", " ").Trim();
+                if (t.Length > 1 && !terms.Contains(t, StringComparer.OrdinalIgnoreCase))
+                {
+                    terms.Add(t);
+                }
+            }
+
+            if (parts.Count > 1)
+            {
+                Add(string.Join(' ', parts));
+            }
+
+            for (var i = parts.Count - 1; i >= 0; i--)
+            {
+                Add(parts[i]);
+            }
+
+            return terms;
+        }
+
+        private async Task<string?> GetFanEditRatingAsync(Movie item, Configuration.PluginConfiguration config, CancellationToken cancellationToken)
+        {
+            if (string.IsNullOrWhiteSpace(config.TmdbApiKey) || string.IsNullOrWhiteSpace(item.Name))
+            {
+                return null;
+            }
+
+            var country = _serverConfig.Configuration.MetadataCountryCode ?? "US";
+            foreach (var term in FanEditSearchTerms(item.Name))
+            {
+                var hit = await TmdbRatings.SearchAsync(_httpClientFactory, config.TmdbApiKey, term, _logger, cancellationToken)
+                    .ConfigureAwait(false);
+                if (hit is null)
+                {
+                    continue;
+                }
+
+                var (type, id, matched) = hit.Value;
+                var rating = type == "movie"
+                    ? await TmdbRatings.GetMovieCertificationAsync(_httpClientFactory, config.TmdbApiKey, id, country, IsRecognized, _logger, cancellationToken, config.MapForeignRatings).ConfigureAwait(false)
+                    : await TmdbRatings.GetSeriesRatingAsync(_httpClientFactory, config.TmdbApiKey, id, country, IsRecognized, _logger, cancellationToken, config.MapForeignRatings).ConfigureAwait(false);
+                if (IsRecognized(rating))
+                {
+                    _logger.LogInformation(
+                        "Chaperone: fan edit '{Name}' rated '{Rating}' from its source '{Source}' (TMDb {Type} {Id}).",
+                        item.Name,
+                        rating,
+                        matched,
+                        type,
+                        id);
+                    return rating;
+                }
+            }
+
+            return null;
+        }
+
+        private static (string? Artist, string? Title) ArtistAndTitle(Audio item)
+        {
+            var artist = item.Artists?.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(artist))
+            {
+                artist = item.AlbumArtists?.FirstOrDefault();
+            }
+
+            return (artist, item.Name);
+        }
+
+        private async Task<bool?> GetExplicitByItunesAsync(Audio item, CancellationToken cancellationToken)
+        {
+            var (artist, title) = ArtistAndTitle(item);
+            if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(title))
+            {
+                return null;
+            }
+
+            var url = string.Format(
+                CultureInfo.InvariantCulture,
+                "https://itunes.apple.com/search?term={0}&entity=song&limit=15",
+                Uri.EscapeDataString(artist + " " + title));
+
+            var client = _httpClientFactory.CreateClient(NamedClient.Default);
+            HttpResponseMessage response;
+            try
+            {
+                response = await ItunesThrottle.RunAsync(
+                    () => client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken),
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new TransientLookupException("iTunes request failed", ex);
+            }
+
+            using (response)
+            {
+                if (response.StatusCode == HttpStatusCode.TooManyRequests || (int)response.StatusCode == 403)
+                {
+                    throw new TransientLookupException("iTunes rate limit");
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(stream, default, cancellationToken).ConfigureAwait(false);
+                if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                {
+                    return null;
+                }
+
+                const double floor = 0.85;
+                var targetTitle = Normalize(title);
+                var targetArtist = Normalize(artist);
+                var sawExplicit = false;
+                var sawClean = false;
+
+                foreach (var r in results.EnumerateArray())
+                {
+                    var name = r.TryGetProperty("trackName", out var tn) ? tn.GetString() : null;
+                    var by = r.TryGetProperty("artistName", out var an) ? an.GetString() : null;
+                    var flag = r.TryGetProperty("trackExplicitness", out var te) ? te.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(by) || string.IsNullOrWhiteSpace(flag))
+                    {
+                        continue;
+                    }
+
+                    // The artist must match too: a same-titled song by someone else is a different song.
+                    var byNorm = Normalize(by);
+                    var artistOk = Similarity(targetArtist, byNorm) >= floor
+                        || byNorm.StartsWith(targetArtist + " ", StringComparison.Ordinal)
+                        || targetArtist.StartsWith(byNorm + " ", StringComparison.Ordinal);
+                    if (!artistOk || Similarity(targetTitle, Normalize(name)) < floor)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(flag, "explicit", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sawExplicit = true;
+                    }
+                    else
+                    {
+                        // "notExplicit", or "cleaned" (the radio edit of an explicit song).
+                        if (string.Equals(flag, "cleaned", StringComparison.OrdinalIgnoreCase))
+                        {
+                            sawExplicit = true;
+                        }
+
+                        sawClean = true;
+                    }
+                }
+
+                if (sawExplicit && sawClean)
+                {
+                    // Both versions exist and nothing tells us which one this file is: don't guess.
+                    return null;
+                }
+
+                return sawExplicit ? true : sawClean ? false : (bool?)null;
+            }
+        }
+
+        private async Task<bool?> GetExplicitByLyricsAsync(Audio item, string wordList, CancellationToken cancellationToken)
+        {
+            var (artist, title) = ArtistAndTitle(item);
+            if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(title))
+            {
+                return null;
+            }
+
+            var query = new StringBuilder("https://lrclib.net/api/search?artist_name=")
+                .Append(Uri.EscapeDataString(artist))
+                .Append("&track_name=")
+                .Append(Uri.EscapeDataString(title));
+
+            var client = _httpClientFactory.CreateClient(NamedClient.Default);
+            HttpResponseMessage response;
+
+            // LRCLIB answers 503 "ServerOverloaded … please retry in a moment" when busy (cached songs still
+            // answer). Retry twice with a short back-off before deferring the track to the next scan.
+            var attempt = 0;
+            while (true)
+            {
+                attempt++;
+                try
+                {
+                    response = await LrclibThrottle.RunAsync(
+                        () =>
+                        {
+                            var request = new HttpRequestMessage(HttpMethod.Get, query.ToString());
+                            request.Headers.UserAgent.ParseAdd(UserAgent);
+                            return client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (HttpRequestException ex)
+                {
+                    throw new TransientLookupException("LRCLIB request failed", ex);
+                }
+
+                if (attempt < 3 && (response.StatusCode == HttpStatusCode.ServiceUnavailable || response.StatusCode == HttpStatusCode.TooManyRequests))
+                {
+                    response.Dispose();
+                    await Task.Delay(TimeSpan.FromSeconds(attempt * 3), cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                break;
+            }
+
+            using (response)
+            {
+                if (response.StatusCode == HttpStatusCode.TooManyRequests || (int)response.StatusCode >= 500)
+                {
+                    throw new TransientLookupException("LRCLIB unavailable");
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(stream, default, cancellationToken).ConfigureAwait(false);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    return null;
+                }
+
+                var targetTitle = Normalize(title);
+                var targetArtist = Normalize(artist);
+                var durationSec = item.RunTimeTicks.HasValue ? TimeSpan.FromTicks(item.RunTimeTicks.Value).TotalSeconds : (double?)null;
+
+                foreach (var r in doc.RootElement.EnumerateArray())
+                {
+                    var name = r.TryGetProperty("trackName", out var tn) ? tn.GetString() : null;
+                    var by = r.TryGetProperty("artistName", out var an) ? an.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(by)
+                        || Similarity(targetTitle, Normalize(name)) < 0.85
+                        || Similarity(targetArtist, Normalize(by)) < 0.85)
+                    {
+                        continue;
+                    }
+
+                    // Same recording? LRCLIB keys lyrics to a duration; a different cut (live, extended)
+                    // can have different words, so require the lengths to agree within 5 seconds.
+                    if (durationSec.HasValue && r.TryGetProperty("duration", out var d) && d.ValueKind == JsonValueKind.Number
+                        && Math.Abs(d.GetDouble() - durationSec.Value) > 5)
+                    {
+                        continue;
+                    }
+
+                    if (r.TryGetProperty("instrumental", out var inst) && inst.ValueKind == JsonValueKind.True)
+                    {
+                        return false;
+                    }
+
+                    var lyrics = r.TryGetProperty("plainLyrics", out var pl) && pl.ValueKind == JsonValueKind.String ? pl.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(lyrics))
+                    {
+                        return LyricsContainExplicit(lyrics!, wordList);
+                    }
+                }
+
+                return null;
+            }
         }
 
         private static string? GetProviderId(Audio item, string key)

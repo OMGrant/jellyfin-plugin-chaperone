@@ -16,7 +16,7 @@ namespace Jellyfin.Plugin.Chaperone
 {
     /// <summary>
     /// Scheduled task that scans the whole library and fills in missing parental ratings.
-    /// Manual-run only (no default triggers).
+    /// Runs daily at 3 AM by default.
     /// </summary>
     public class LibraryScanTask : IScheduledTask
     {
@@ -46,7 +46,7 @@ namespace Jellyfin.Plugin.Chaperone
         /// <inheritdoc />
         public string Description =>
             "Looks up every music track, movie, and show with no parental rating and fills it in "
-            + "using Deezer, TMDb, and MyAnimeList.";
+            + "using Deezer, MusicBrainz, Apple Music, LRCLIB lyrics, TMDb, and MyAnimeList.";
 
         /// <inheritdoc />
         public string Category => "Chaperone";

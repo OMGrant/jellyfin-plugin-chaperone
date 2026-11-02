@@ -25,7 +25,8 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             string preferredCountry,
             Func<string?, bool> isRecognized,
             ILogger logger,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool mapForeign = false)
         {
             var url = string.Format(
                 CultureInfo.InvariantCulture,
@@ -79,7 +80,7 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            return Pick(byCountry, preferredCountry, isRecognized);
+            return Pick(byCountry, preferredCountry, isRecognized, mapForeign, false);
         }
 
         /// <summary>
@@ -92,7 +93,8 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             string preferredCountry,
             Func<string?, bool> isRecognized,
             ILogger logger,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool mapForeign = false)
         {
             var url = string.Format(
                 CultureInfo.InvariantCulture,
@@ -135,7 +137,61 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                 },
                 cancellationToken).ConfigureAwait(false);
 
-            return Pick(byCountry, preferredCountry, isRecognized);
+            return Pick(byCountry, preferredCountry, isRecognized, mapForeign, true);
+        }
+
+        /// <summary>
+        /// Finds the best TMDb movie or TV match for a free-text title (used for fan edits, which have no
+        /// TMDb entry of their own). Returns ("movie"|"tv", id, matched title), or null on no match.
+        /// </summary>
+        public static async Task<(string MediaType, string Id, string Title)?> SearchAsync(
+            IHttpClientFactory httpClientFactory,
+            string apiKey,
+            string query,
+            ILogger logger,
+            CancellationToken cancellationToken)
+        {
+            var url = string.Format(
+                CultureInfo.InvariantCulture,
+                "https://api.themoviedb.org/3/search/multi?query={0}&include_adult=false&api_key={1}",
+                Uri.EscapeDataString(query),
+                Uri.EscapeDataString(apiKey));
+
+            try
+            {
+                var client = httpClientFactory.CreateClient(NamedClient.Default);
+                using var response = await client
+                    .GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                using var doc = await JsonDocument.ParseAsync(stream, default, cancellationToken).ConfigureAwait(false);
+                if (!doc.RootElement.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
+                {
+                    return null;
+                }
+
+                // TMDb orders by relevance; take the first movie or show (skip people).
+                foreach (var r in results.EnumerateArray())
+                {
+                    var type = r.TryGetProperty("media_type", out var mt) ? mt.GetString() : null;
+                    if ((type == "movie" || type == "tv") && r.TryGetProperty("id", out var idProp))
+                    {
+                        var title = r.TryGetProperty(type == "movie" ? "title" : "name", out var t) ? t.GetString() ?? string.Empty : string.Empty;
+                        return (type!, idProp.GetRawText(), title);
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogDebug(ex, "Chaperone: TMDb search for '{Query}' failed.", query);
+            }
+
+            return null;
         }
 
         private static async Task<Dictionary<string, string>> FetchAsync(
@@ -175,7 +231,9 @@ namespace Jellyfin.Plugin.Chaperone.Providers
         private static string? Pick(
             Dictionary<string, string> byCountry,
             string preferredCountry,
-            Func<string?, bool> isRecognized)
+            Func<string?, bool> isRecognized,
+            bool mapForeign,
+            bool forSeries)
         {
             if (byCountry.Count == 0)
             {
@@ -196,6 +254,17 @@ namespace Jellyfin.Plugin.Chaperone.Providers
             if (byCountry.TryGetValue("US", out var us) && isRecognized(us))
             {
                 return us;
+            }
+
+            // No preferred/US certification: optionally translate a foreign one to its nearest US
+            // equivalent (German "12" -> PG-13) rather than writing the foreign label as-is.
+            if (mapForeign)
+            {
+                var mapped = ForeignRatings.ToUs(byCountry, forSeries);
+                if (isRecognized(mapped))
+                {
+                    return mapped;
+                }
             }
 
             foreach (var kvp in byCountry)

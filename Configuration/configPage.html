@@ -190,6 +190,58 @@
 
                 <div class="checkboxContainer checkboxContainer-withDescription">
                     <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="EnableItunes" />
+                        <span>Use Apple Music's catalogue (iTunes Search) for music</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        A second source of per-track explicit flags, tried when Deezer and MusicBrainz can't identify a track. Free, no account needed.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="EnableLyrics" />
+                        <span>Use lyrics to rate remaining music (LRCLIB)</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        A track whose own title says it is an instrumental, karaoke or backing-track version is rated clean. Otherwise LRCLIB's lyrics decide: marked instrumental means clean; otherwise the words below are checked.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="LyricsExplicitWords">Words that make lyrics explicit</label>
+                    <input is="emby-input" type="text" id="LyricsExplicitWords" />
+                    <div class="fieldDescription">Comma-separated. A word matches whole; end it with * to match as a prefix (fuck* matches fucking).</div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="RecheckUnidentified" />
+                        <span>Re-check items marked unidentified</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        Look again at items Chaperone previously labeled with its unidentified rating, so newer sources (or data that has appeared since) can still rate them. A miss leaves the label as it is.
+                    </div>
+                </div>
+
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="FanEditLibraries">Fan-edit libraries</label>
+                    <input is="emby-input" type="text" id="FanEditLibraries" />
+                    <div class="fieldDescription">Comma-separated library names. An unrated movie in one of these is rated as its source film or show, found on TMDb from its title. Leave empty to turn off.</div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input is="emby-checkbox" type="checkbox" id="MapForeignRatings" />
+                        <span>Map foreign-only ratings to US equivalents</span>
+                    </label>
+                    <div class="fieldDescription checkboxFieldDescription">
+                        When a movie or show has only foreign certifications (e.g. German &quot;12&quot;), use the nearest US rating (PG-13) instead. Approximate by nature.
+                    </div>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
                         <input is="emby-checkbox" type="checkbox" id="OverwriteExisting" />
                         <span>Overwrite existing ratings</span>
                     </label>
@@ -237,6 +289,13 @@
                         config.InheritAlbumRatingForTracks !== false;
                     document.querySelector('#RateAllArtistsBrowsable').checked =
                         config.RateAllArtistsBrowsable !== false;
+                    document.querySelector('#EnableItunes').checked = config.EnableItunes !== false;
+                    document.querySelector('#EnableLyrics').checked = config.EnableLyrics !== false;
+                    document.querySelector('#LyricsExplicitWords').value = config.LyricsExplicitWords || '';
+                    document.querySelector('#RecheckUnidentified').checked = config.RecheckUnidentified !== false;
+                    document.querySelector('#FanEditLibraries').value =
+                        (config.FanEditLibraries === undefined || config.FanEditLibraries === null) ? 'Fan Edits' : config.FanEditLibraries;
+                    document.querySelector('#MapForeignRatings').checked = config.MapForeignRatings === true;
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -257,6 +316,12 @@
                 config.RateAlbums = document.querySelector('#RateAlbums').checked;
                 config.InheritAlbumRatingForTracks = document.querySelector('#InheritAlbumRatingForTracks').checked;
                 config.RateAllArtistsBrowsable = document.querySelector('#RateAllArtistsBrowsable').checked;
+                config.EnableItunes = document.querySelector('#EnableItunes').checked;
+                config.EnableLyrics = document.querySelector('#EnableLyrics').checked;
+                config.LyricsExplicitWords = document.querySelector('#LyricsExplicitWords').value;
+                config.RecheckUnidentified = document.querySelector('#RecheckUnidentified').checked;
+                config.FanEditLibraries = document.querySelector('#FanEditLibraries').value;
+                config.MapForeignRatings = document.querySelector('#MapForeignRatings').checked;
                 return ApiClient.updatePluginConfiguration(ChaperoneConfig.pluginUniqueId, config);
             });
         }

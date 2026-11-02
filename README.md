@@ -17,8 +17,8 @@ Jellyfin's parental controls are only as good as the `OfficialRating` metadata o
 
 | Content | Source | How |
 | --- | --- | --- |
-| **Music** | [Deezer](https://www.deezer.com/) | Matches each track (artist + title) and reads its explicit-lyrics flag. Falls back to an **ISRC** lookup via [MusicBrainz](https://musicbrainz.org/) for exact matching when a fuzzy search is ambiguous. |
-| **Movies** | [TMDb](https://www.themoviedb.org/) | Reads release-date certifications across **all regions** and picks a rating. |
+| **Music** | [Deezer](https://www.deezer.com/), [MusicBrainz](https://musicbrainz.org/), [Apple Music](https://music.apple.com/) (iTunes Search), [LRCLIB](https://lrclib.net/) | Matches each track (artist + title) and reads its explicit-lyrics flag from Deezer, with an exact **ISRC** lookup via MusicBrainz when that's ambiguous; then Apple Music's catalogue; then lyrics from LRCLIB (instrumentals are clean, lyrics are checked against a configurable word list). |
+| **Movies** | [TMDb](https://www.themoviedb.org/) | Reads release-date certifications across **all regions** and picks a rating. **Fan edits** are rated from their source film or show; foreign-only certifications can optionally be mapped to the nearest US rating. |
 | **Shows** | [TMDb](https://www.themoviedb.org/) | Reads content-rating certifications across all regions. |
 | **Anime** | [MyAnimeList](https://myanimelist.net/) (via [Jikan](https://jikan.moe/)) | Fallback resolver for anime that TMDb doesn't cover well. |
 
@@ -28,25 +28,26 @@ For movies and shows, Chaperone also **re-examines items already tagged with som
 
 ### Explicit music → a real rating
 
-Explicit tracks get **`TV-MA`** by default and clean tracks get **`TV-G`** (both configurable). That turns Deezer's explicit flag into something Jellyfin's parental controls can actually enforce.
+Explicit tracks get **`TV-MA`** by default and clean tracks get **`TV-G`** (both configurable). That turns the streaming services' explicit flag into something Jellyfin's parental controls can actually enforce. Like that flag, it is about **explicit language**, not themes: a clean song about a battle is still clean.
 
 ## How it works
 
 - **Automatic on import.** Chaperone registers metadata providers for audio, movies, and series, so new content gets rated as it's added to the library.
 - **Albums are rated too.** Each music album is rated from its tracks using the *least restrictive* rating present, so parental controls don't hide the whole album (or its artist) just because the container has no rating of its own. A clean album stays browsable while an explicit track inside it remains individually blocked. Artists need no rating — Jellyfin shows an artist automatically once it has visible content underneath.
-- **Three fallbacks so tracks aren't left unrated.** For music the plugin tries, in order: (1) a fuzzy Deezer search on artist + title; (2) an exact **ISRC** lookup via MusicBrainz for anything ambiguous; and (3) if both miss — some recordings simply have no ISRC in MusicBrainz, or none on Deezer — the track **inherits its album's rating**. If even that can't help (the whole album is unidentifiable), the track is labeled **`Unrated`** (configurable) rather than left blank — an honest fill, so there's never a gap.
+- **A chain of sources so tracks aren't left unrated.** For music the plugin tries, in order: (0) a track whose own title says it's an **instrumental / karaoke / backing-track** version is clean — checked first, so it's never judged by the vocal version; (1) a fuzzy Deezer search on artist + title; (2) an exact **ISRC** lookup via MusicBrainz for anything ambiguous; (3) **Apple Music's catalogue** (iTunes Search, matching artist *and* title; if both clean and explicit versions exist it doesn't guess); (4) **LRCLIB lyrics** — marked instrumental means clean, otherwise the words are checked (same recording only: durations must agree within 5 s); and (5) the track **inherits its album's rating**. If nothing helps, the track is labeled **`Unrated`** (configurable) rather than left blank — an honest fill, so there's never a gap. `Unrated` items are **re-checked on every scan**, so they get rated as soon as any source has data.
 
 ### The artist workaround
 
 Turning on Jellyfin's **"Block items with no or unrecognized rating information"** is what actually hides unrated/unidentified music from restricted users — but Jellyfin then also blocks the **artist folder** itself unless it carries a recognized rating, which breaks browsing music by artist. Jellyfin gives no way to exempt artist containers from that block, so Chaperone stamps **every artist `TV-G`** (the *Keep artists browsable* option, on by default). This is a deliberate workaround, **not** a content judgement of the artist — the real filtering still happens on the albums and tracks inside. If you'd rather rate artists yourself, turn the option off.
 - **Non-destructive by default.** It only fills in a rating when the field is **blank**. Existing ratings are left alone unless you turn on *Overwrite existing ratings*.
-- **Manual full-library scan.** A button on the plugin's config page (and a matching **Dashboard → Scheduled Tasks** entry, *Chaperone Library Scan*) runs a one-off pass over everything already in your library to backfill missing ratings.
+- **Daily library scan.** The scan runs every day at 3 AM by default (change it under **Dashboard → Scheduled Tasks → Chaperone**), and a button on the plugin's config page runs it on demand.
+- **Temporary failures never become "Unrated".** If a service is rate-limited or overloaded (LRCLIB answers "server busy" at times), the track is left for the next scan instead of being labeled.
 - **Automatic index refresh.** Jellyfin only recomputes a folder's effective parental rating (what restricted users are actually filtered on) during a *library scan* — not when items are edited. So after its own scan makes changes, Chaperone **queues a Jellyfin library scan automatically**, so the new album/artist/track ratings take effect for restricted users without you having to run *Scan Media Library* by hand.
 
 ## Requirements
 
-- **Jellyfin 10.11.x** (built against `10.11.11`).
-- Outbound internet access to Deezer, MusicBrainz, TMDb, and Jikan. All are used with **free, no-auth public endpoints**; MusicBrainz and Jikan are politely rate-limited by the plugin.
+- **Jellyfin 12.2+** for Chaperone 1.5 and later (built against `12.2.0`). On Jellyfin 10.11, use 1.4.0.0.
+- Outbound internet access to Deezer, MusicBrainz, Apple's iTunes Search, LRCLIB, TMDb, and Jikan. All are used with **free, no-auth public endpoints**, each politely rate-limited by the plugin.
 - **No API keys required.** TMDb access uses Jellyfin's public key out of the box; you can supply your own TMDb v3 key in settings if you prefer.
 
 ## Installation
@@ -93,13 +94,19 @@ Open **Dashboard → Plugins → Chaperone**.
 | **Clean music rating** | `TV-G` | Rating applied to clean tracks. |
 | **TMDb API key (v3)** | Jellyfin's public key | Used for movie/show certifications; replace with your own if you like. |
 | **Rate music / movies / shows / anime** | all on | Toggle each content type independently. |
+| **Use Apple Music's catalogue** | on | iTunes Search as a second explicit-flag source for music. |
+| **Use lyrics (LRCLIB)** | on | Instrumentals (by title or LRCLIB) are clean; otherwise lyrics are checked against the word list. |
+| **Words that make lyrics explicit** | strong profanity and slurs | Comma-separated; `word*` matches as a prefix. Mild words are left out on purpose. |
+| **Re-check items marked unidentified** | on | Looks at `Unrated` items again on every scan. |
+| **Fan-edit libraries** | `Fan Edits` | Library names whose unrated movies are rated from their source film/show. Empty turns it off. |
+| **Map foreign-only ratings to US equivalents** | off | e.g. German `12` → `PG-13`, Japanese `G` → `G`. Approximate by nature. |
 | **Overwrite existing ratings** | off | When on, replaces ratings that are already set instead of only filling blanks. |
 
 Use **Run full library scan** to backfill your existing library at any time.
 
 ## Privacy
 
-Chaperone only sends the minimum needed to identify an item — a track's artist/title (or ISRC), or a movie/show/anime's title and provider IDs — to the public metadata services listed above. It stores nothing externally and adds no telemetry.
+Chaperone only sends the minimum needed to identify an item — a track's artist/title (or ISRC), or a movie/show/anime's title and provider IDs — to the public metadata services listed above. Lyrics are fetched to be checked locally; nothing about your library or users is sent anywhere. It stores nothing externally and adds no telemetry.
 
 ## A note on the code
 
@@ -110,4 +117,4 @@ Chaperone only sends the minimum needed to identify an item — a track's artist
 
 [MIT](LICENSE) © Grant Garrison
 
-Not affiliated with Jellyfin, Deezer, MusicBrainz, TMDb, or MyAnimeList. This product uses the TMDb API but is not endorsed or certified by TMDb.
+Not affiliated with Jellyfin, Deezer, MusicBrainz, Apple, LRCLIB, TMDb, or MyAnimeList. This product uses the TMDb API but is not endorsed or certified by TMDb.
