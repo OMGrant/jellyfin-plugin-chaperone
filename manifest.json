@@ -2,8 +2,8 @@
   {
     "guid": "1207208a-b4d4-4065-b4b6-2f126ad01861",
     "name": "Chaperone",
-    "description": "Fills in missing parental ratings for music (Deezer), movies & shows (TMDb), and anime (MyAnimeList) so parental controls work across the whole library.",
-    "overview": "Automatic parental ratings across music, movies, shows, and anime.",
+    "description": "Fills in missing parental ratings so Jellyfin parental controls work across the whole library: explicit/clean music from Deezer, MusicBrainz, Apple Music and LRCLIB lyrics; movies and shows from TMDb; anime from MyAnimeList; fan edits from their source. Built-in MCP server lets an AI model research the rest, with verified evidence and admin review.",
+    "overview": "Automatic parental ratings for music, movies, shows and anime, plus an MCP server for the hard ones.",
     "owner": "OMGrant",
     "category": "Metadata",
     "imageUrl": "https://raw.githubusercontent.com/OMGrant/jellyfin-plugin-chaperone/main/thumb.png",
