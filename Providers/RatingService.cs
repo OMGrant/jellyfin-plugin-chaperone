@@ -673,6 +673,27 @@ namespace Jellyfin.Plugin.Chaperone.Providers
 
         private async Task<bool?> GetExplicitByLyricsAsync(Audio item, string wordList, CancellationToken cancellationToken)
         {
+            var found = await FindLyricsAsync(item, cancellationToken).ConfigureAwait(false);
+            if (found is null)
+            {
+                return null;
+            }
+
+            if (found.Instrumental)
+            {
+                return false;
+            }
+
+            return string.IsNullOrWhiteSpace(found.Lyrics) ? null : LyricsContainExplicit(found.Lyrics!, wordList);
+        }
+
+        /// <summary>
+        /// Looks a track up on LRCLIB (same artist, title within 0.85, duration within 5 s). Returns null when
+        /// LRCLIB has no matching recording; throws <see cref="TransientLookupException"/> when LRCLIB is busy.
+        /// Shared by the scan and the MCP tools.
+        /// </summary>
+        public async Task<LyricsLookup?> FindLyricsAsync(Audio item, CancellationToken cancellationToken)
+        {
             var (artist, title) = ArtistAndTitle(item);
             if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(title))
             {
@@ -761,15 +782,11 @@ namespace Jellyfin.Plugin.Chaperone.Providers
                         continue;
                     }
 
-                    if (r.TryGetProperty("instrumental", out var inst) && inst.ValueKind == JsonValueKind.True)
-                    {
-                        return false;
-                    }
-
+                    var instrumental = r.TryGetProperty("instrumental", out var inst) && inst.ValueKind == JsonValueKind.True;
                     var lyrics = r.TryGetProperty("plainLyrics", out var pl) && pl.ValueKind == JsonValueKind.String ? pl.GetString() : null;
-                    if (!string.IsNullOrWhiteSpace(lyrics))
+                    if (instrumental || !string.IsNullOrWhiteSpace(lyrics))
                     {
-                        return LyricsContainExplicit(lyrics!, wordList);
+                        return new LyricsLookup(instrumental, lyrics, name!, by!);
                     }
                 }
 

@@ -137,5 +137,12 @@ namespace Jellyfin.Plugin.Chaperone.Configuration
         /// the foreign label. Approximate by nature, so off by default.
         /// </summary>
         public bool MapForeignRatings { get; set; }
+
+        /// <summary>
+        /// Gets or sets the comma-separated names of Jellyfin API keys whose MCP rating proposals are applied
+        /// immediately. Proposals from any other key (or an admin user session) queue for review in the settings
+        /// page. Empty = every proposal is reviewed.
+        /// </summary>
+        public string TrustedMcpClients { get; set; } = string.Empty;
     }
 }

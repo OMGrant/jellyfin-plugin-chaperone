@@ -26,3 +26,9 @@ namespace Jellyfin.Plugin.Chaperone.Providers
         }
     }
 }
+
+namespace Jellyfin.Plugin.Chaperone.Providers
+{
+    /// <summary>A matching LRCLIB recording: instrumental flag, plain lyrics, and the matched title/artist.</summary>
+    public sealed record LyricsLookup(bool Instrumental, string? Lyrics, string MatchedTitle, string MatchedArtist);
+}

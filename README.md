@@ -44,6 +44,24 @@ Turning on Jellyfin's **"Block items with no or unrecognized rating information"
 - **Temporary failures never become "Unrated".** If a service is rate-limited or overloaded (LRCLIB answers "server busy" at times), the track is left for the next scan instead of being labeled.
 - **Automatic index refresh.** Jellyfin only recomputes a folder's effective parental rating (what restricted users are actually filtered on) during a *library scan* — not when items are edited. So after its own scan makes changes, Chaperone **queues a Jellyfin library scan automatically**, so the new album/artist/track ratings take effect for restricted users without you having to run *Scan Media Library* by hand.
 
+## Let an AI model take the hard ones (MCP)
+
+Some items no database knows — an obscure B-side, a fan edit, a home video. Chaperone is also an **MCP server**, so an AI
+model (Claude, a local model through any MCP client, an assistant you run yourself) can research those and propose a rating:
+
+- **Endpoint:** `POST https://<your-jellyfin>/Chaperone/mcp` (MCP Streamable HTTP). Authenticate with an **admin Jellyfin API key**
+  in the header `Authorization: MediaBrowser Token="<key>"`. Give each model **its own key** (Dashboard → API Keys) — the key's
+  name is how Chaperone tells clients apart, and you can revoke one without touching the others.
+- **Tools:** `rating_scale` (the rules), `list_unrated`, `get_item`, `get_lyrics`, `propose_rating`, `list_proposals`.
+- **Evidence is checked.** A proposal carries a reason and, ideally, a source URL plus an exact quote. Chaperone fetches the page
+  and records whether the quote is really there (`verified` / `not found`), so invented evidence is visible.
+- **You stay in charge.** Only API keys listed under **Trusted MCP clients** apply directly; everyone else's proposals wait on
+  the plugin's settings page with **Approve / Reject** buttons. Applied ratings are **locked** (a metadata refresh can't undo
+  them) and every decision is kept with who made it and why.
+- **The model has no other powers**: it can only read item facts and propose ratings — it can't edit anything else.
+
+Example (Claude Code): `claude mcp add --transport http chaperone https://<your-jellyfin>/Chaperone/mcp --header 'Authorization: MediaBrowser Token="<key>"'`
+
 ## Requirements
 
 - **Jellyfin 12.2+** for Chaperone 1.5 and later (built against `12.2.0`). On Jellyfin 10.11, use 1.4.0.0.

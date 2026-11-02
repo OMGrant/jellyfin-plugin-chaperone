@@ -1,6 +1,6 @@
 {
   "category": "Metadata",
-  "changelog": "More sources for unrated items: Apple Music (iTunes Search) explicit flags; LRCLIB lyrics (instrumentals are clean, lyrics checked against a configurable word list); fan edits rated from their source film/show; optional foreign-to-US rating mapping; items previously marked Unrated are re-checked.",
+  "changelog": "Chaperone is now an MCP server (/Chaperone/mcp, admin API keys): any AI model can list unrated items, read details and lyrics, and propose ratings with evidence that Chaperone verifies. Trusted clients apply directly; others queue for review in the settings page. Applied ratings are locked and logged.",
   "description": "Fills in missing parental ratings for music (Deezer), movies & shows (TMDb), and anime (MyAnimeList) so parental controls work across the whole library.",
   "guid": "1207208a-b4d4-4065-b4b6-2f126ad01861",
   "name": "Chaperone",
@@ -9,7 +9,7 @@
   "targetAbi": "12.2.0.0",
   "framework": "net10.0",
   "timestamp": "2026-11-02T00:00:00Z",
-  "version": "1.6.0.0",
+  "version": "1.7.0.0",
   "status": "Active",
   "autoUpdate": false,
   "imagePath": "thumb.png"

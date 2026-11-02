@@ -250,6 +250,20 @@
                     </div>
                 </div>
 
+                <h3 class="sectionTitle">Rating proposals (MCP)</h3>
+                <div class="fieldDescription" style="margin-bottom:1em">
+                    Chaperone is an MCP server at <code>/Chaperone/mcp</code> on this Jellyfin (admin API keys only). An AI model —
+                    Claude, a local model, any MCP client — can list unrated items, read their details and lyrics, and propose a
+                    rating with evidence; Chaperone checks that quoted evidence really appears on the cited page. Give each client
+                    its own API key (Dashboard → API Keys) so you can tell them apart and revoke one on its own.
+                </div>
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="TrustedMcpClients">Trusted MCP clients</label>
+                    <input is="emby-input" type="text" id="TrustedMcpClients" />
+                    <div class="fieldDescription">Comma-separated API key names whose proposals apply immediately. Everyone else's wait below for you.</div>
+                </div>
+                <div id="ChaperoneProposals" style="margin:1em 0 2em"></div>
+
                 <div>
                     <button is="emby-button" type="submit" class="raised button-submit block emby-button">
                         <span>Save</span>
@@ -296,6 +310,8 @@
                     document.querySelector('#FanEditLibraries').value =
                         (config.FanEditLibraries === undefined || config.FanEditLibraries === null) ? 'Fan Edits' : config.FanEditLibraries;
                     document.querySelector('#MapForeignRatings').checked = config.MapForeignRatings === true;
+                    document.querySelector('#TrustedMcpClients').value = config.TrustedMcpClients || '';
+                    chaperoneLoadProposals();
                     Dashboard.hideLoadingMsg();
                 });
             });
@@ -322,9 +338,53 @@
                 config.RecheckUnidentified = document.querySelector('#RecheckUnidentified').checked;
                 config.FanEditLibraries = document.querySelector('#FanEditLibraries').value;
                 config.MapForeignRatings = document.querySelector('#MapForeignRatings').checked;
+                config.TrustedMcpClients = document.querySelector('#TrustedMcpClients').value;
                 return ApiClient.updatePluginConfiguration(ChaperoneConfig.pluginUniqueId, config);
             });
         }
+
+        function chaperoneEsc(v) {
+            return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+            });
+        }
+
+        // Pending proposals first (with Approve / Reject), then the last 20 decided ones as a record.
+        function chaperoneLoadProposals() {
+            var box = document.querySelector('#ChaperoneProposals');
+            ApiClient.getJSON(ApiClient.getUrl('Chaperone/Proposals')).then(function (all) {
+                var pending = all.filter(function (p) { return p.Status === 'pending'; });
+                var done = all.filter(function (p) { return p.Status !== 'pending'; }).slice(0, 20);
+                var row = function (p, actions) {
+                    var ev = p.EvidenceUrl
+                        ? '<a href="' + chaperoneEsc(p.EvidenceUrl) + '" target="_blank" rel="noopener">source</a> · evidence ' + chaperoneEsc(p.EvidenceCheck)
+                        : 'no evidence link';
+                    return '<div class="listItem" style="display:block;padding:.6em 0;border-bottom:1px solid rgba(128,128,128,.2)">'
+                        + '<div><b>' + chaperoneEsc(p.ItemName) + '</b> → <b>' + chaperoneEsc(p.Rating) + '</b>'
+                        + ' <span style="opacity:.7">(was ' + chaperoneEsc(p.PreviousRating || 'blank') + ', by ' + chaperoneEsc(p.Client) + ')</span></div>'
+                        + '<div style="opacity:.85">' + chaperoneEsc(p.Reason) + '</div>'
+                        + (p.EvidenceQuote ? '<div style="opacity:.7;font-style:italic">“' + chaperoneEsc(p.EvidenceQuote) + '”</div>' : '')
+                        + '<div style="opacity:.7">' + ev + (actions ? '' : ' · ' + chaperoneEsc(p.Status) + (p.DecidedBy ? ' by ' + chaperoneEsc(p.DecidedBy) : '')) + '</div>'
+                        + (actions ? '<div style="margin-top:.4em">'
+                            + '<button is="emby-button" type="button" class="raised emby-button" data-approve="' + p.Id + '">Approve</button> '
+                            + '<button is="emby-button" type="button" class="emby-button" data-reject="' + p.Id + '">Reject</button></div>' : '')
+                        + '</div>';
+                };
+                box.innerHTML = '<h4>Waiting for you (' + pending.length + ')</h4>'
+                    + (pending.length ? pending.map(function (p) { return row(p, true); }).join('') : '<div style="opacity:.7">Nothing pending.</div>')
+                    + (done.length ? '<h4 style="margin-top:1.5em">Recent decisions</h4>' + done.map(function (p) { return row(p, false); }).join('') : '');
+            });
+        }
+
+        document.querySelector('#ChaperoneProposals').addEventListener('click', function (e) {
+            var a = e.target.closest('[data-approve]'), r = e.target.closest('[data-reject]');
+            if (!a && !r) { return; }
+            var id = (a || r).getAttribute(a ? 'data-approve' : 'data-reject');
+            Dashboard.showLoadingMsg();
+            ApiClient.ajax({ type: 'POST', url: ApiClient.getUrl('Chaperone/Proposals/' + id + (a ? '/Approve' : '/Reject')) })
+                .then(function () { Dashboard.hideLoadingMsg(); chaperoneLoadProposals(); },
+                      function () { Dashboard.hideLoadingMsg(); Dashboard.alert('Could not update the proposal.'); });
+        });
 
         document.querySelector('#ChaperoneConfigForm')
             .addEventListener('submit', function (e) {

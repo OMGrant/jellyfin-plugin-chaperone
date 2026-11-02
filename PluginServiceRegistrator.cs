@@ -14,6 +14,7 @@ namespace Jellyfin.Plugin.Chaperone
         public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
         {
             serviceCollection.AddSingleton<RatingService>();
+            serviceCollection.AddSingleton<Mcp.ChaperoneTools>();
         }
     }
 }
